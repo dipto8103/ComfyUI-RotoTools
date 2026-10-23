@@ -21,14 +21,24 @@ Drop it at any stage of a workflow to see `W x H | frames | fps | seconds` print
 Optional padding check (width/height multiple of 32, frames = 8n+1) and an optional `compare_to` input that shows **MATCHES** / **MISMATCH** against another batch (for example the original clip).
 
 ### Load Video Batch (Folders)  — `image/video`
-Built for hundreds of clips in one go. Type or paste a **parent folder**; every video in its sub-folders is found automatically (natural sort, so `clip2` comes before `clip10`) and **one video per run** is sent on as a `VIDEO`.
+Built for hundreds of clips in one go. Type or paste **one or more folders, comma separated** (`x\ep93, x\ep94`); every video in their sub-folders is found automatically (natural sort, so `shot2` comes before `shot10`) and **one video per run** is sent on as a `VIDEO`.
+
+```
+batch_folder  = x\ep93, x\ep94          output_folder = D:\rotos
+x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
+x\ep94\shot1\shot1.mp4   ->  D:\rotos\ep94\shot1.zip
+y\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93_2\shot1.zip   (second folder named ep93)
+```
 
 1. Replace *Load Video* with this node and connect `video` where Load Video went.
-2. Connect its `zip_name` output to the saver's `zip_name` input (zips are named `subfolder__clip`, so same-named clips in different folders never clash).
-3. Leave `index` on **increment** and set Run's **batch count** to the number of videos (the node shows `n / total` while it runs). ComfyUI queues them one after another.
-4. **Resume**: put the zips folder in `zips_folder`. Any video whose zip already exists is skipped quickly, so re-queueing after a crash or a stop only does the missing ones.
+2. Connect `zip_name` to the saver's `zip_name` input and `zip_folder` to the saver's `output_folder`.
+   Each input folder gets its own folder inside `output_folder`, named after it; zips are named after the video file. Two input folders with the same name become `ep93`, `ep93_2` (the preview shows the full path of each). Two videos with the same name inside one folder become `take`, `take_2`.
+3. Leave `index` on **increment** and set Run's **batch count** to the number of videos (shown on the preview bar; the node shows `n / total` while it runs). ComfyUI queues them one after another.
+4. **Resume**: with `skip_if_zip_exists` on, any video whose zip is already in its folder is skipped quickly, so re-queueing after a crash or a stop only does the missing ones.
 
-Outputs: `video`, `zip_name`, `video_path`, `index`, `total`.
+**Preview grid**: the node shows a thumbnail of every detected video, grouped per input folder (with its full path and output folder). Hover a tile to play it, click it for a full view in the node (✕ to go back to the grid). Resize the node or use the slider to change the tile size. ✓ = zip already exists; the yellow frame is the video of the last run. Videos the browser cannot play (some .mov/.mkv/.avi codecs) still get a thumbnail.
+
+Outputs: `video`, `zip_name`, `video_path`, `index`, `total`, `zip_folder`.
 
 ## Install
 
