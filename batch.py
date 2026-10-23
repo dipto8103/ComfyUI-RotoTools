@@ -5,8 +5,9 @@ Point it at one or more folders (comma separated, e.g. x\\ep93, x\\ep94); it fin
 sub-folders, sorts them, and hands ONE video per run to the rest of the workflow.  Set the index widget to
 "increment" and Run's batch count to the number of videos: ComfyUI queues them one after another.
 
-Each input folder gets its own output folder named after it (output\\ep93, output\\ep94; a second folder
-with the same name becomes ep93_2), and every zip is named after its video file (shot5.mp4 -> shot5.zip),
+Each input folder gets its own output folder named after it (output\\ep93, output\\ep94; another folder
+with the same name gets its location added: y\\ep93 -> ep93 (y), and keeps that name from run to run),
+and every zip is named after its video file (shot5.mp4 -> shot5.zip),
 so the same shot names in different episodes never clash.
 
 The node also shows a preview grid of every detected video (hover = play, click = full view), served by
@@ -36,10 +37,11 @@ def _abs(path):
 
 
 def split_folders(text):
-    """'x\\ep93, x\\ep94' (or one per line) -> list of absolute paths, duplicates dropped, order kept."""
+    """'x\\ep93, x\\ep94' (or one per line, or Explorer's "Copy as path" list, even with the line breaks
+    squashed: "x\\ep93""x\\ep94") -> list of absolute paths, duplicates dropped, order kept."""
     out, seen = [], set()
-    for part in re.split(r"[,\n]", text or ""):
-        part = part.strip().strip('"').strip()
+    for quoted, plain in re.findall(r'"([^"]*)"|([^",\r\n]+)', text or ""):
+        part = (quoted or plain).strip()
         if not part:
             continue
         p = _abs(part)
@@ -78,26 +80,94 @@ def _unique(name, used):
     return cand
 
 
-def scan_batch(folders_text, extensions=DEFAULT_EXTS, recursive=True, strict=True):
+# Each output folder remembers which input folder it belongs to, so a name never moves to another folder:
+# x\ep93 -> output\ep93 and y\ep93 -> output\ep93 (y), whether they are run together or on their own.
+SOURCE_MARK = ".rototools_source"
+
+
+def _owner(folder):
+    """normcase'd input folder recorded in an output folder; '' = folder exists but has no record; None = no folder."""
+    try:
+        with open(os.path.join(folder, SOURCE_MARK), encoding="utf-8") as f:
+            return os.path.normcase(f.readline().strip())
+    except OSError:
+        return "" if os.path.isdir(folder) else None
+
+
+def claim_folder(folder, root):
+    """Create the output folder and record its input folder (hidden file, best effort)."""
+    os.makedirs(folder, exist_ok=True)
+    mark = os.path.join(folder, SOURCE_MARK)
+    if _owner(folder) == os.path.normcase(root):
+        return
+    try:
+        with open(mark, "w", encoding="utf-8") as f:
+            f.write(root + "\n")
+        if os.name == "nt":
+            import ctypes
+            ctypes.windll.kernel32.SetFileAttributesW(mark, 0x2)  # FILE_ATTRIBUTE_HIDDEN
+    except OSError as e:
+        print("[LoadVideoBatchFolders] could not write %s: %s" % (mark, e))
+
+
+def _label_candidates(root):
+    """ep93, ep93 (y), ep93 (y) 2, ep93 (y) 3 ...  (y = the folder that holds ep93)."""
+    base = _clean(os.path.basename(root) or root.replace(":", ""))
+    parent = os.path.dirname(root)
+    where = _clean(os.path.basename(parent) or parent.replace(":", "").strip("\\/")) if parent != root else "root"
+    yield base
+    yield "%s (%s)" % (base, where)
+    for n in range(2, 1000):
+        yield "%s (%s) %d" % (base, where, n)
+
+
+def assign_labels(roots, output_folder=""):
+    """Output folder name for each input folder.
+
+    The plain name (ep93) goes to the first input folder that may use it; another folder with the same name
+    gets its location added (ep93 (y)). A name already recorded for a folder (SOURCE_MARK) is always reused,
+    and a name recorded for a different folder is never taken, so the same input folder keeps its output
+    folder from run to run. Output folders made before this record existed are taken as they are.
+    """
+    used, labels = set(), []
+    for root in roots:
+        key = os.path.normcase(root)
+        cands = list(_label_candidates(root))
+        owners = {}
+        for i, c in enumerate(cands):
+            if c.lower() in used:
+                continue
+            owners[c] = _owner(zip_folder_for(output_folder, c))
+            if owners[c] is None and i >= 1:
+                break   # ep93 (y) 2, 3 ... are made in order, so none after a missing one exists
+        mine = [c for c, o in owners.items() if o == key]
+        free = [c for c, o in owners.items() if o in (None, "")]
+        label = (mine or free)[0]
+        used.add(label.lower())
+        labels.append(label)
+    return labels
+
+
+def scan_batch(folders_text, extensions=DEFAULT_EXTS, recursive=True, strict=True, output_folder=""):
     """Every video in every listed folder, in order.
 
     Returns (groups, items, errors):
-      groups: [{"label": "ep93", "root": abs path, "count": n}]   label = folder name, ep93_2 if repeated
+      groups: [{"label": output folder name (see assign_labels), "root": abs path, "count": n}]
       items:  [{"path", "rel", "group" (index into groups), "name" (zip name, unique inside its group)}]
     strict=True raises on a missing folder; False collects the message in errors instead.
     """
-    groups, items, errors, labels = [], [], [], set()
+    groups, items, errors = [], [], []
+    found = []
     for root in split_folders(folders_text):
         try:
-            root, vids = scan_videos(root, extensions, recursive)
+            found.append(scan_videos(root, extensions, recursive))
         except FileNotFoundError as e:
             if strict:
                 raise
             errors.append(str(e))
-            continue
+    for (root, vids), label in zip(found, assign_labels([r for r, _ in found], output_folder)):
         g = len(groups)
-        groups.append({"label": _unique(_clean(os.path.basename(root) or root.replace(":", "")), labels),
-                       "root": root, "count": len(vids)})
+        groups.append({"label": label, "root": root, "count": len(vids)})
         names = set()
         for p in vids:
             items.append({"path": p, "rel": os.path.relpath(p, root), "group": g,
@@ -134,9 +204,11 @@ class LoadVideoBatchFolders:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "batch_folder": ("STRING", {"default": "", "tooltip": "One or more folders, comma separated "
-                                                                      "(x\\ep93, x\\ep94). Every video inside them and their "
-                                                                      "sub-folders is found automatically."}),
+                "batch_folder": ("STRING", {"default": "", "multiline": True,
+                                            "tooltip": "One or more folders, one per line or comma separated "
+                                                       "(x\\ep93, x\\ep94). Use 'Add folders' on the preview to pick them, "
+                                                       "or paste Explorer's Copy as path (Ctrl+Shift+C). Every video inside "
+                                                       "them and their sub-folders is found automatically."}),
                 "index": ("INT", {"default": 0, "min": 0, "max": 999999, "control_after_generate": "increment",
                                   "tooltip": "Which video to load (0 = first). Leave this on 'increment' and set Run's "
                                              "batch count to the number of videos: they are queued one after another."}),
@@ -171,7 +243,7 @@ class LoadVideoBatchFolders:
             return float("nan")
 
     def load(self, batch_folder, index, skip_if_zip_exists, output_folder, extensions, recursive, unique_id=None):
-        groups, items, _ = scan_batch(batch_folder, extensions, recursive)
+        groups, items, _ = scan_batch(batch_folder, extensions, recursive, output_folder=output_folder)
         _remember(items)
         total = len(items)
         if total == 0:
@@ -191,6 +263,7 @@ class LoadVideoBatchFolders:
         it = items[index]
         label = groups[it["group"]]["label"]
         zfolder = zip_folder_for(output_folder, label)
+        claim_folder(zfolder, groups[it["group"]]["root"])   # this name now belongs to this input folder
         if skip_if_zip_exists and os.path.exists(os.path.join(zfolder, it["name"] + ".zip")):
             return skip("%d/%d SKIPPED (zip already exists): %s\\%s" % (index + 1, total, label, it["name"]))
         msg = "%d / %d   %s \\ %s" % (index + 1, total, label, it["rel"])
@@ -229,7 +302,7 @@ def _allowed(path):
 
 def scan_report(folders_text, extensions, recursive, output_folder):
     """JSON for the preview grid: groups (with full path and output folder), items with a done flag."""
-    groups, items, errors = scan_batch(folders_text, extensions, recursive, strict=False)
+    groups, items, errors = scan_batch(folders_text, extensions, recursive, strict=False, output_folder=output_folder)
     _remember(items)
     for g in groups:
         g["out"] = zip_folder_for(output_folder, g["label"])
@@ -238,7 +311,52 @@ def scan_report(folders_text, extensions, recursive, output_folder):
         out = groups[it["group"]]["out"]
         rows.append({"i": i, "group": it["group"], "rel": it["rel"], "name": it["name"], "path": it["path"],
                      "done": os.path.exists(os.path.join(out, it["name"] + ".zip"))})
-    return {"total": len(rows), "groups": groups, "items": rows, "errors": errors}
+    folders = [{"path": p, "key": os.path.normcase(p)} for p in split_folders(folders_text)]
+    for g in groups:
+        g["key"] = os.path.normcase(g["root"])
+    return {"total": len(rows), "groups": groups, "items": rows, "errors": errors, "folders": folders}
+
+
+def merge_folders(current, added):
+    """The batch_folder text after adding folders: one per line, nothing listed twice."""
+    return "\n".join(split_folders("\n".join([current or ""] + ['"%s"' % a for a in added])))
+
+
+# ---------------------------------------------------------------- native folder picker
+# Opens the system's own folder dialog on the machine running ComfyUI (several folders at once).
+_PICKER_PS1 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pick_folders.ps1")
+
+
+def picker_command(start=""):
+    """argv for the folder dialog of this OS, or None if there is none."""
+    import shutil
+    import sys
+    if sys.platform == "win32":
+        ps = shutil.which("powershell") or shutil.which("pwsh")
+        if ps:
+            return [ps, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+                    "-File", _PICKER_PS1, "-Start", start or ""]
+    elif sys.platform == "darwin":
+        return ["osascript", "-e", 'set fs to choose folder with prompt "Add video folders" with multiple selections allowed',
+                "-e", 'set out to ""', "-e", "repeat with f in fs", "-e", "set out to out & POSIX path of f & linefeed",
+                "-e", "end repeat", "-e", "return out"]
+    for tool, args in (("zenity", ["--file-selection", "--directory", "--multiple", "--separator=\n",
+                                   "--title=Add video folders"] + (["--filename=" + start + os.sep] if start else [])),
+                       ("kdialog", ["--multiple", "--separate-output", "--getexistingdirectory", start or "~"])):
+        exe = shutil.which(tool)
+        if exe:
+            return [exe] + args
+    return None
+
+
+def parse_picker_output(text):
+    """Folder paths printed by the dialog, one per line; only folders that exist."""
+    out = []
+    for line in (text or "").splitlines():
+        p = line.strip().strip('"')
+        if p and os.path.isdir(p):
+            out.append(os.path.normpath(p.rstrip("/\\") or p))
+    return out
 
 
 def make_thumb(path, size=320):
@@ -295,6 +413,36 @@ def _register_routes():
                 print("[LoadVideoBatchFolders] no thumbnail for %s: %s" % (path, e))
                 return web.Response(status=415)
         return web.Response(body=data, content_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+    picking = asyncio.Lock()
+
+    @routes.post("/rototools/batch/pick")
+    async def _pick(request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if picking.locked():
+            return web.json_response({"error": "A folder dialog is already open on the ComfyUI computer."}, status=409)
+        start = body.get("start") or ""
+        cmd = picker_command(os.path.dirname(start.rstrip("/\\")) if start else "")  # open next to the last folder
+        if not cmd:
+            return web.json_response({"error": "No folder dialog available on this system; type or paste the paths."},
+                                     status=501)
+        async with picking:
+            try:
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                            stderr=asyncio.subprocess.PIPE)
+                out, err = await proc.communicate()
+            except Exception as e:
+                return web.json_response({"error": "Folder dialog failed: %s" % e}, status=500)
+        picked = parse_picker_output(out.decode("utf-8", "replace"))
+        if proc.returncode not in (0, 1) and not picked:   # 1 = cancelled for zenity/osascript
+            msg = err.decode("utf-8", "replace").strip()[-400:]
+            print("[LoadVideoBatchFolders] folder dialog error:", msg)
+            return web.json_response({"error": "Folder dialog failed: " + (msg or "exit %s" % proc.returncode)},
+                                     status=500)
+        return web.json_response({"picked": picked, "text": merge_folders(body.get("current", ""), picked)})
 
     @routes.get("/rototools/batch/video")
     async def _video(request):

@@ -57,16 +57,96 @@ def test_split_folders(batch, tmp_path):
     assert batch.split_folders("  ") == []
 
 
+def test_split_folders_copy_as_path(batch, tmp_path):
+    a, b, c = (str(tmp_path / n) for n in ("ep 93", "ep94", "ep95"))
+    want = [a, b, c]
+    assert batch.split_folders('"%s"\r\n"%s"\r\n"%s"' % (a, b, c)) == want    # Explorer's Copy as path
+    assert batch.split_folders('"%s""%s""%s"' % (a, b, c)) == want          # same, line breaks squashed
+    assert batch.split_folders('"%s" "%s", %s' % (a, b, c)) == want
+
+
+def test_merge_folders(batch, tmp_path):
+    a, b, c = (str(tmp_path / n) for n in ("a", "b", "c"))
+    assert batch.merge_folders("%s, %s" % (a, b), [c, a]) == "\n".join([a, b, c])
+    assert batch.merge_folders("", [a]) == a
+
+
+def test_parse_picker_output(batch, tmp_path):
+    (tmp_path / "x").mkdir()
+    out = '%s\r\n"%s"\n%s\n\n' % (tmp_path / "x", tmp_path / "x", tmp_path / "gone")
+    assert batch.parse_picker_output(out) == [str(tmp_path / "x")] * 2
+
+
+def test_picker_command_exists_on_windows(batch, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda n: "C:\\ps.exe" if n == "powershell" else None)
+    cmd = batch.picker_command("D:\\x")
+    assert cmd[0] == "C:\\ps.exe" and cmd[cmd.index("-File") + 1].endswith("pick_folders.ps1")
+    assert cmd[-2:] == ["-Start", "D:\\x"] and os.path.exists(batch._PICKER_PS1)
+
+
 def test_scan_batch_groups_names_and_order(batch, eps):
     text = ", ".join(str(eps / p) for p in ["x/ep93", "x/ep94", "y/ep93"])
     groups, items, errors = batch.scan_batch(text)
     assert errors == []
-    assert [g["label"] for g in groups] == ["ep93", "ep94", "ep93_2"]
+    assert [g["label"] for g in groups] == ["ep93", "ep94", "ep93 (y)"]
     assert groups[2]["root"] == str(eps / "y" / "ep93")
     assert [g["count"] for g in groups] == [4, 2, 1]
     got = [(groups[i["group"]]["label"], i["name"]) for i in items]
     assert got == [("ep93", "shot1"), ("ep93", "extra"), ("ep93", "shot2"), ("ep93", "shot10"),
-                   ("ep94", "shot1"), ("ep94", "shot2"), ("ep93_2", "shot1")]
+                   ("ep94", "shot1"), ("ep94", "shot2"), ("ep93 (y)", "shot1")]
+
+
+def labels(batch, eps, out, *rels):
+    groups, _, _ = batch.scan_batch(", ".join(str(eps / r) for r in rels), output_folder=str(out))
+    return [g["label"] for g in groups]
+
+
+def claim(batch, eps, out, rel, label):
+    batch.claim_folder(str(out / label), str(eps / rel))
+
+
+def test_output_folder_names_stay_with_their_input_folder(batch, eps, tmp_path):
+    out = tmp_path / "out"
+    assert labels(batch, eps, out, "x/ep93", "y/ep93") == ["ep93", "ep93 (y)"]
+    claim(batch, eps, out, "x/ep93", "ep93")
+    claim(batch, eps, out, "y/ep93", "ep93 (y)")
+    assert labels(batch, eps, out, "y/ep93") == ["ep93 (y)"]               # alone: still its own folder
+    assert labels(batch, eps, out, "y/ep93", "x/ep93") == ["ep93 (y)", "ep93"]   # order does not matter
+    assert labels(batch, eps, out, "x/ep93") == ["ep93"]
+
+
+def test_first_folder_to_run_keeps_the_plain_name(batch, eps, tmp_path):
+    out = tmp_path / "out"
+    claim(batch, eps, out, "y/ep93", "ep93")                                # y ran first, on its own
+    assert labels(batch, eps, out, "x/ep93") == ["ep93 (x)"]                # never writes into y's folder
+    assert labels(batch, eps, out, "x/ep93", "y/ep93") == ["ep93 (x)", "ep93"]
+
+
+def test_folder_made_before_the_record_is_taken_over(batch, eps, tmp_path):
+    out = tmp_path / "out"
+    (out / "ep93").mkdir(parents=True)                                      # 0.2.0 output, no record
+    assert labels(batch, eps, out, "x/ep93") == ["ep93"]
+
+
+def test_same_folder_name_and_same_parent_name(batch, tmp_path):
+    make(tmp_path / "a" / "show" / "ep1", ["s1/s1.mp4"])
+    make(tmp_path / "b" / "show" / "ep1", ["s1/s1.mp4"])
+    make(tmp_path / "c" / "ep1", ["s1/s1.mp4"])
+    text = ", ".join(str(tmp_path / p) for p in ["c/ep1", "a/show/ep1", "b/show/ep1"])
+    groups, _, _ = batch.scan_batch(text, output_folder=str(tmp_path / "out"))
+    assert [g["label"] for g in groups] == ["ep1", "ep1 (show)", "ep1 (show) 2"]
+
+
+def test_load_records_the_input_folder(batch, monkeypatch, eps, tmp_path):
+    out = tmp_path / "out"
+    text = "%s, %s" % (eps / "x" / "ep93", eps / "y" / "ep93")
+    run(batch, monkeypatch, text, index=4, output_folder=str(out))         # y\ep93\shot1
+    with open(out / "ep93 (y)" / batch.SOURCE_MARK, encoding="utf-8") as f:
+        assert f.read().strip() == str(eps / "y" / "ep93")
+    run(batch, monkeypatch, str(eps / "y" / "ep93"), index=0, output_folder=str(out))
+    assert sorted(os.listdir(out)) == ["ep93 (y)"]                          # alone: same folder, no new one
 
 
 def test_same_video_name_in_one_folder_gets_suffix(batch, tmp_path):
@@ -140,11 +220,11 @@ def test_empty_folder_errors(batch, monkeypatch, tmp_path):
 def test_scan_report_and_allowed_paths(batch, eps, tmp_path):
     text = "%s, %s, %s" % (eps / "x" / "ep93", eps / "y" / "ep93", eps / "missing")
     out_root = tmp_path / "out"
-    (out_root / "ep93_2").mkdir(parents=True)
-    (out_root / "ep93_2" / "shot1.zip").write_bytes(b"z")
+    (out_root / "ep93 (y)").mkdir(parents=True)
+    (out_root / "ep93 (y)" / "shot1.zip").write_bytes(b"z")
     rep = batch.scan_report(text, batch.DEFAULT_EXTS, True, str(out_root))
     assert rep["total"] == 5 and len(rep["errors"]) == 1
-    assert [g["out"] for g in rep["groups"]] == [str(out_root / "ep93"), str(out_root / "ep93_2")]
+    assert [g["out"] for g in rep["groups"]] == [str(out_root / "ep93"), str(out_root / "ep93 (y)")]
     assert [i["done"] for i in rep["items"]] == [False, False, False, False, True]
     assert batch._allowed(rep["items"][0]["path"])
     assert not batch._allowed(str(eps / "x" / "ep94" / "shot1" / "shot1.mp4"))   # never scanned
@@ -162,4 +242,5 @@ def test_saver_writes_into_episode_folder(batch, nodes_mod, make_frames, monkeyp
             rle_compression=True, overwrite=False, preview_frames=0, save_as_zip=True,
             source_video=FakeVideo(path), zip_name=name)
     assert sorted(os.listdir(out_root)) == ["ep93", "ep94"]
-    assert os.listdir(out_root / "ep93") == ["shot1.zip"] and os.listdir(out_root / "ep94") == ["shot1.zip"]
+    for ep in ("ep93", "ep94"):
+        assert sorted(os.listdir(out_root / ep)) == [batch.SOURCE_MARK, "shot1.zip"]
