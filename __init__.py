@@ -1,7 +1,9 @@
-"""ComfyUI-RotoTools: transparent TGA zip saver and spec readout nodes for roto / alpha-matte workflows."""
+"""ComfyUI-RotoTools: roto / alpha-matte helper nodes (TGA zip saver, spec readout, folder batch loader)."""
 if __package__:
-    from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-else:  # imported as a bare module (pytest's package collector); real errors in nodes.py must still surface in ComfyUI
+    from . import nodes as _nodes, batch as _batch
+    NODE_CLASS_MAPPINGS = {**_nodes.NODE_CLASS_MAPPINGS, **_batch.NODE_CLASS_MAPPINGS}
+    NODE_DISPLAY_NAME_MAPPINGS = {**_nodes.NODE_DISPLAY_NAME_MAPPINGS, **_batch.NODE_DISPLAY_NAME_MAPPINGS}
+else:  # imported as a bare module (pytest's package collector); real errors must still surface inside ComfyUI
     NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = {}, {}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

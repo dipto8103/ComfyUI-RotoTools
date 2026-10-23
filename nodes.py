@@ -28,6 +28,14 @@ from PIL import Image
 import folder_paths
 
 
+def _clean_name(name):
+    """Make a string safe to use as a file name (no extension); None if nothing is left."""
+    if not name:
+        return None
+    name = "".join(c if (c.isalnum() or c in " ._-()[]") else "_" for c in str(name)).strip(" .")
+    return name or None
+
+
 def _video_stem(video):
     """File name (without extension) of the clip a VIDEO input was loaded from, or None."""
     if video is None:
@@ -38,9 +46,7 @@ def _video_stem(video):
         return None
     if not isinstance(src, (str, os.PathLike)):
         return None
-    stem = os.path.splitext(os.path.basename(str(src)))[0]
-    stem = "".join(c if (c.isalnum() or c in " ._-()[]") else "_" for c in stem).strip(" .")
-    return stem or None
+    return _clean_name(os.path.splitext(os.path.basename(str(src)))[0])
 
 
 class SaveImageSequenceTGA:
@@ -86,6 +92,8 @@ class SaveImageSequenceTGA:
                 "source_video": ("VIDEO", {"tooltip": "Connect the Load Video node here. The zip is then named after "
                                                       "the video file (clip.mp4 -> clip.zip). Not connected: the "
                                                       "filename_prefix is used as the zip name."}),
+                "zip_name": ("STRING", {"forceInput": True, "tooltip": "Optional: exact zip name (no extension), e.g. from "
+                                                                         "Load Video Batch (Folders). Wins over source_video."}),
             },
         }
 
@@ -128,14 +136,14 @@ class SaveImageSequenceTGA:
         return folder, path
 
     def save(self, images, output_folder, filename_prefix, start_number, digits, rle_compression, overwrite,
-             preview_frames=3, save_as_zip=True, source_video=None):
+             preview_frames=3, save_as_zip=True, source_video=None, zip_name=None):
         base = (filename_prefix or "frame").strip() or "frame"
         results = []
         zf = None
         zip_path = None
         part_path = None
         if save_as_zip:
-            zip_base = _video_stem(source_video) or base
+            zip_base = _clean_name(zip_name) or _video_stem(source_video) or base
             folder, zip_path = self._zip_target(output_folder, zip_base, overwrite)
             part_path = zip_path + ".part"   # written under a temp name, renamed when complete
             zf = zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=3)

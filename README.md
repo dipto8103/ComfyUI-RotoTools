@@ -13,11 +13,22 @@ Saves an `IMAGE` batch as numbered **TGA** frames, keeping a real **alpha channe
 - Never overwrites an earlier result unless you turn `overwrite` on (`_v2`, `_v3` ...). If the old zip is open in Explorer / 7-Zip, the new one is saved under a new name instead of failing.
 - Zip is written to `*.zip.part` and renamed when complete, so a crash never leaves a half-written zip that looks finished.
 - Lossless RLE compression option, start number, zero padding, and a transparent preview of a few frames on the node.
+- Optional `zip_name` input: an exact zip name from another node (wins over `source_video`).
 - Turn `save_as_zip` off to get loose `.tga` files.
 
 ### Spec Readout (size / frames / fps)  — `image/monitor`
 Drop it at any stage of a workflow to see `W x H | frames | fps | seconds` printed on the node itself while the graph runs.
 Optional padding check (width/height multiple of 32, frames = 8n+1) and an optional `compare_to` input that shows **MATCHES** / **MISMATCH** against another batch (for example the original clip).
+
+### Load Video Batch (Folders)  — `image/video`
+Built for hundreds of clips in one go. Type or paste a **parent folder**; every video in its sub-folders is found automatically (natural sort, so `clip2` comes before `clip10`) and **one video per run** is sent on as a `VIDEO`.
+
+1. Replace *Load Video* with this node and connect `video` where Load Video went.
+2. Connect its `zip_name` output to the saver's `zip_name` input (zips are named `subfolder__clip`, so same-named clips in different folders never clash).
+3. Leave `index` on **increment** and set Run's **batch count** to the number of videos (the node shows `n / total` while it runs). ComfyUI queues them one after another.
+4. **Resume**: put the zips folder in `zips_folder`. Any video whose zip already exists is skipped quickly, so re-queueing after a crash or a stop only does the missing ones.
+
+Outputs: `video`, `zip_name`, `video_path`, `index`, `total`.
 
 ## Install
 
