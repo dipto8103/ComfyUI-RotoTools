@@ -21,18 +21,24 @@ Drop it at any stage of a workflow to see `W x H | frames | fps | seconds` print
 Optional padding check (width/height multiple of 32, frames = 8n+1) and an optional `compare_to` input that shows **MATCHES** / **MISMATCH** against another batch (for example the original clip).
 
 ### Load Video Batch (Folders)  — `image/video`
-Built for hundreds of clips in one go. Type or paste **one or more folders, comma separated** (`x\ep93, x\ep94`); every video in their sub-folders is found automatically (natural sort, so `shot2` comes before `shot10`) and **one video per run** is sent on as a `VIDEO`.
+Built for hundreds of clips in one go. Give it **one or more folders**; every video in their sub-folders is found automatically (natural sort, so `shot2` comes before `shot10`) and **one video per run** is sent on as a `VIDEO`.
 
 ```
 batch_folder  = x\ep93, x\ep94          output_folder = D:\rotos
 x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
 x\ep94\shot1\shot1.mp4   ->  D:\rotos\ep94\shot1.zip
-y\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93_2\shot1.zip   (second folder named ep93)
+y\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93 (y)\shot1.zip   (another folder named ep93)
 ```
+
+**Adding folders** (any mix of drives):
+- **+ Add folders…** on the preview opens the normal Windows folder dialog (macOS / Linux: the system one). Ctrl / Shift click to pick several. Open it again to add more from another drive; folders already in the list are not added twice.
+- **✕ remove** on a folder's header takes it out of the batch; **Clear** empties the list (nothing is deleted on disk).
+- Or type / paste into `batch_folder`: one folder per line or comma separated. Explorer's *Copy as path* (select the folders, Ctrl+Shift+C) can be pasted as is.
+- The dialog opens on the computer running ComfyUI. Dragging folders onto the node is not possible: browsers never give a web page the full path of a dropped folder.
 
 1. Replace *Load Video* with this node and connect `video` where Load Video went.
 2. Connect `zip_name` to the saver's `zip_name` input and `zip_folder` to the saver's `output_folder`.
-   Each input folder gets its own folder inside `output_folder`, named after it; zips are named after the video file. Two input folders with the same name become `ep93`, `ep93_2` (the preview shows the full path of each). Two videos with the same name inside one folder become `take`, `take_2`.
+   Each input folder gets its own folder inside `output_folder`, named after it; zips are named after the video file. Another input folder with the same name gets its location added: `y\ep93` becomes `ep93 (y)`. Each output folder remembers its input folder (a hidden `.rototools_source` file), so a folder keeps the same output folder from run to run, whether it is batched with the other ep93 or on its own. The preview shows the full path of each. Two videos with the same name inside one folder become `take`, `take_2`.
 3. Leave `index` on **increment** and set Run's **batch count** to the number of videos (shown on the preview bar; the node shows `n / total` while it runs). ComfyUI queues them one after another.
 4. **Resume**: with `skip_if_zip_exists` on, any video whose zip is already in its folder is skipped quickly, so re-queueing after a crash or a stop only does the missing ones.
 

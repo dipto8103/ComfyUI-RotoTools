@@ -14,6 +14,10 @@ const CSS = `
 .rtb-bar .rtb-info { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rtb-bar button { background:#383838; color:#ddd; border:1px solid #555; border-radius:4px; cursor:pointer; padding:1px 8px; }
 .rtb-bar input[type=range] { width:90px; }
+.rtb-bar .rtb-add { background:#2d5a8a; border-color:#4a7fb5; font-weight:bold; }
+.rtb-bar button:disabled { opacity:.6; cursor:wait; }
+.rtb-group .rtb-rm { float:right; background:#5a2d2d; color:#fbb; border:1px solid #844; border-radius:4px;
+                     cursor:pointer; padding:0 6px; margin-left:8px; }
 .rtb-scroll { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:6px; }
 .rtb-group { grid-column:1/-1; padding:6px 2px 2px; color:#9cf; border-bottom:1px solid #333; }
 .rtb-group small { color:#999; display:block; word-break:break-all; }
@@ -70,6 +74,10 @@ function setupNode(node) {
     const root = el("div", "rtb");
     const bar = el("div", "rtb-bar");
     const info = el("span", "rtb-info", "No folder yet");
+    const add = el("button", "rtb-add", "+ Add folders…");
+    add.title = "Pick one or more folders (Ctrl / Shift click). Open it again to add folders from another drive.";
+    const clear = el("button", null, "Clear");
+    clear.title = "Remove all folders from the list";
     const refresh = el("button", null, "Refresh");
     const size = el("input");
     size.type = "range";
@@ -77,7 +85,7 @@ function setupNode(node) {
     size.max = 480;
     size.value = node.properties?.rototools_tile || 150;
     size.title = "Preview size";
-    bar.append(info, size, refresh);
+    bar.append(add, info, size, clear, refresh);
     const scroll = el("div", "rtb-scroll");
     const grid = el("div", "rtb-grid");
     scroll.appendChild(grid);
@@ -167,8 +175,11 @@ function setupNode(node) {
         for (const e of data.errors) grid.appendChild(el("div", "rtb-group rtb-err", e));
         if (!data.total && !data.errors.length) grid.appendChild(el("div", "rtb-group", "No videos found."));
         data.groups.forEach((g, gi) => {
-            const h = el("div", "rtb-group", `${g.label}  (${g.count} videos)  → ${g.out}`);
-            h.appendChild(el("small", null, g.root));
+            const h = el("div", "rtb-group");
+            const rm = el("button", "rtb-rm", "✕ remove");
+            rm.title = "Take this folder out of the batch (nothing is deleted on disk)";
+            rm.addEventListener("click", () => removeFolder(g.key));
+            h.append(rm, `${g.label}  (${g.count} videos)  → ${g.out}`, el("small", null, g.root));
             grid.appendChild(h);
             for (const it of data.items) {
                 if (it.group !== gi) continue;
@@ -207,6 +218,46 @@ function setupNode(node) {
     }
     const scanSoon = (ms = 500) => { clearTimeout(state.timer); state.timer = setTimeout(scan, ms); };
     refresh.addEventListener("click", () => { state.sig = ""; scan(); });
+
+    function setFolders(text) {
+        const w = node.widgets?.find((x) => x.name === "batch_folder");
+        if (!w) return;
+        w.value = text;
+        node.graph?.setDirtyCanvas?.(true, true);
+        scanSoon(50);
+    }
+
+    function removeFolder(key) {
+        const left = (state.data?.folders ?? []).filter((f) => f.key !== key).map((f) => f.path);
+        setFolders(left.join("\n"));
+    }
+
+    clear.addEventListener("click", () => {
+        if (!String(inputValue(node, "batch_folder") || "").trim()) return;
+        if (confirm("Remove all folders from this batch? (Nothing is deleted on disk.)")) setFolders("");
+    });
+
+    add.addEventListener("click", async () => {
+        const current = String(inputValue(node, "batch_folder") || "");
+        const last = state.data?.folders?.at(-1)?.path ?? "";
+        add.disabled = true;
+        const label = add.textContent;
+        add.textContent = "Dialog open on the ComfyUI PC…";
+        try {
+            const r = await api.fetchApi("/rototools/batch/pick", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ current, start: last }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+            if (data.picked.length) setFolders(data.text);
+        } catch (e) {
+            alert("Add folders: " + e.message);
+        } finally {
+            add.disabled = false;
+            add.textContent = label;
+        }
+    });
 
     for (const name of WATCH) {
         const w = node.widgets?.find((x) => x.name === name);

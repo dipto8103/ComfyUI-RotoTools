@@ -3,6 +3,13 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.0] - 2026-10-23
+### Added
+- **Load Video Batch (Folders)**: **+ Add folders…** button on the preview opens the system folder dialog (several folders at once, can be opened again to add folders from other drives); **✕ remove** per folder and **Clear**.
+- `batch_folder` is now a multi-line box (one folder per line) and accepts Explorer's *Copy as path* lists.
+### Changed
+- Another input folder with the same name now gets its location added (`y\ep93` -> `ep93 (y)`) instead of `ep93_2`. Each output folder records its input folder (hidden `.rototools_source` file), so a folder keeps the same output folder from run to run and never writes into another folder's.
+
 ## [0.2.0] - 2026-10-23
 ### Added
 - **Load Video Batch (Folders)**: several folders at once (comma separated); a preview grid of every detected video on the node (hover = play, click = full view, resizable tiles, done marks); new `zip_folder` output.
