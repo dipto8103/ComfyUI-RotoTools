@@ -3,6 +3,11 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.3] - 2026-10-23
+### Fixed
+- **Load Video Batch (Folders)**: `index` now goes back to 0 when the list of folders / videos changes, and when it is past the last video. Before, it kept counting from the previous batch, so a new list ran as "index 9 is past the last video" and nothing was processed. Works with both "control after generate" and "control before generate".
+- An empty list now says "The batch list is empty: add folders or drop videos …" instead of "No videos … found under (no folder)".
+
 ## [0.3.2] - 2026-10-23
 ### Fixed
 - **Load Video Batch (Folders)**: the "n / total" run status is now one slim line in the preview ("Last run: …") instead of ComfyUI's large progress-text box under the node.

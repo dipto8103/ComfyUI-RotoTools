@@ -327,7 +327,9 @@ class LoadVideoBatchFolders:
         _remember(items)
         total = len(items)
         if total == 0:
-            raise ValueError("No videos (%s) found under %s" % (extensions, ", ".join(split_folders(batch_folder)) or "(no folder)"))
+            if not split_folders(batch_folder):
+                raise ValueError("The batch list is empty: add folders or drop videos onto the Load Video Batch node.")
+            raise ValueError("No videos (%s) found under %s" % (extensions, ", ".join(split_folders(batch_folder))))
         blocker = _blocker()
 
         # the status goes to the node's preview bar (ui message), not ComfyUI's large progress-text box
