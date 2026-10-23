@@ -149,6 +149,74 @@ def test_load_records_the_input_folder(batch, monkeypatch, eps, tmp_path):
     assert sorted(os.listdir(out)) == ["ep93 (y)"]                          # alone: same folder, no new one
 
 
+@pytest.fixture
+def loose(tmp_path):
+    """Single videos, two of them with the same name in different places."""
+    return make(tmp_path / "loose", ["misc/clip_a.mp4", "misc/clip_b.mov", "other/clip_a.mp4", "misc/notes.txt"])
+
+
+def test_single_files_mixed_with_folders(batch, eps, loose, tmp_path):
+    out = tmp_path / "out"
+    text = "\n".join(str(p) for p in [loose / "misc" / "clip_a.mp4", eps / "x" / "ep93",
+                                      loose / "other" / "clip_a.mp4", loose / "misc" / "clip_b.mov"])
+    groups, items, errors = batch.scan_batch(text, output_folder=str(out))
+    assert errors == []
+    assert [(g["kind"], g["label"], g["count"]) for g in groups] == [("files", "", 3), ("folder", "ep93", 4)]
+    assert [i["name"] for i in items[:3]] == ["clip_a", "clip_a (other)", "clip_b"]
+    assert batch.zip_folder_for(str(out), "") == str(out)
+
+
+def test_single_file_errors(batch, loose):
+    with pytest.raises(FileNotFoundError):
+        batch.scan_batch(str(loose / "misc" / "notes.txt"))
+    _, items, errors = batch.scan_batch("%s, %s" % (loose / "misc" / "notes.txt", loose / "misc" / "gone.mp4"),
+                                        strict=False)
+    assert items == [] and "Not a video" in errors[0] and "gone.mp4" in errors[1]
+
+
+def test_single_video_names_stay_with_their_video(batch, loose, tmp_path):
+    out = tmp_path / "out"
+    a, a2 = str(loose / "misc" / "clip_a.mp4"), str(loose / "other" / "clip_a.mp4")
+    assert batch.assign_single_names([a, a2], str(out)) == ["clip_a", "clip_a (other)"]
+    batch.claim_single(str(out), "clip_a", a)
+    batch.claim_single(str(out), "clip_a (other)", a2)
+    assert batch.assign_single_names([a2], str(out)) == ["clip_a (other)"]   # alone: same zip name
+    assert batch.assign_single_names([a2, a], str(out)) == ["clip_a (other)", "clip_a"]
+    batch.claim_single(str(out), "clip_a", a)                               # rewriting the record works
+    assert batch._singles_record(str(out))["clip_a (other)"] == a2
+
+
+def test_load_single_video_saves_into_output_folder(batch, nodes_mod, make_frames, monkeypatch, eps, loose, tmp_path):
+    from helpers import FakeVideo
+    out = tmp_path / "out"
+    text = "%s\n%s" % (loose / "misc" / "clip_a.mp4", eps / "x" / "ep94")
+    for i in (0, 1):
+        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out))
+        nodes_mod.SaveImageSequenceTGA().save(
+            images=make_frames(1), output_folder=zfolder, filename_prefix="frame", start_number=0, digits=5,
+            rle_compression=True, overwrite=False, preview_frames=0, save_as_zip=True,
+            source_video=FakeVideo(path), zip_name=name)
+    assert sorted(os.listdir(out)) == [batch.SINGLES_MARK, "clip_a.zip", "ep94"]
+    out_, B = run(batch, monkeypatch, text, index=0, output_folder=str(out))   # resume: skipped
+    assert all(isinstance(o, B) for o in out_)
+    rep = batch.scan_report(text, batch.DEFAULT_EXTS, True, str(out))
+    assert rep["groups"][0]["out"] == str(out) and rep["items"][0]["done"] and rep["items"][0]["key"]
+
+
+def test_place_drop(batch, tmp_path):
+    drops = tmp_path / "drops"
+    def upload(content, name="clip.mp4"):
+        tmp = tmp_path / ("up_%d.part" % len(os.listdir(tmp_path)))
+        tmp.write_bytes(content)
+        return batch.place_drop(str(tmp), name, str(drops))
+    first = upload(b"AAA")
+    assert first == str(drops / "clip.mp4")
+    assert upload(b"AAA") == first                                   # same video again: same copy
+    assert upload(b"BBB") == str(drops / "2" / "clip.mp4")           # same name, other video
+    assert upload(b"BBB") == str(drops / "2" / "clip.mp4")
+    assert not [f for f in os.listdir(tmp_path) if f.endswith(".part")]
+
+
 def test_same_video_name_in_one_folder_gets_suffix(batch, tmp_path):
     make(tmp_path / "ep1", ["shot1/take.mp4", "shot2/take.mp4", "shot3/TAKE.mov"])
     _, items, _ = batch.scan_batch(str(tmp_path / "ep1"))

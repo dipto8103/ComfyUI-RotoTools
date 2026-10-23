@@ -36,6 +36,19 @@ y\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93 (y)\shot1.zip   (another folder named
 - Or type / paste into `batch_folder`: one folder per line or comma separated. Explorer's *Copy as path* (select the folders, Ctrl+Shift+C) can be pasted as is.
 - The dialog opens on the computer running ComfyUI. Dragging folders onto the node is not possible: browsers never give a web page the full path of a dropped folder.
 
+**Single videos** (no folder needed), mixed freely with folders:
+- **Drop video files onto the node.** Like the normal *Load Video*, each dropped video is copied once into `ComfyUI\input\rototools_drops` and that copy is used. The same video dropped again reuses its copy.
+- Or list video files in `batch_folder` like folders (no copy is made).
+- Their zips go **straight into the save folder**: `SAVE FOLDER\clip_a.zip`. Two videos with the same name from different places become `clip_a` and `clip_a (misc)` (misc = the folder the second one sits in), and each keeps its zip name from run to run.
+- ✕ on a single video's tile (hover) takes it out of the batch; **✕ remove all** on the *Single videos* header removes them all.
+
+```
+batch_folder  = D:\clips\clip_a.mp4          output_folder = D:\rotos
+                x\ep93
+D:\clips\clip_a.mp4      ->  D:\rotos\clip_a.zip
+x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
+```
+
 1. Replace *Load Video* with this node and connect `video` where Load Video went.
 2. Connect `zip_name` to the saver's `zip_name` input and `zip_folder` to the saver's `output_folder`.
    Each input folder gets its own folder inside `output_folder`, named after it; zips are named after the video file. Another input folder with the same name gets its location added: `y\ep93` becomes `ep93 (y)`. Each output folder remembers its input folder (a hidden `.rototools_source` file), so a folder keeps the same output folder from run to run, whether it is batched with the other ep93 or on its own. The preview shows the full path of each. Two videos with the same name inside one folder become `take`, `take_2`.
