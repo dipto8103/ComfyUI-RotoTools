@@ -330,13 +330,13 @@ class LoadVideoBatchFolders:
             raise ValueError("No videos (%s) found under %s" % (extensions, ", ".join(split_folders(batch_folder)) or "(no folder)"))
         blocker = _blocker()
 
+        # the status goes to the node's preview bar (ui message), not ComfyUI's large progress-text box
         def skip(msg):
             print("[LoadVideoBatchFolders] " + msg)
-            self._say(msg, unique_id)
             if blocker is None:
                 raise RuntimeError(msg)
             b = blocker(None)
-            return {"ui": {"rototools_index": [index]}, "result": (b, b, b, b, b, b)}
+            return {"ui": {"rototools_index": [index], "rototools_status": [msg]}, "result": (b, b, b, b, b, b)}
 
         if index >= total:
             return skip("index %d is past the last video (%d videos). Nothing to do." % (index, total))
@@ -353,18 +353,9 @@ class LoadVideoBatchFolders:
             return skip("%d/%d SKIPPED (zip already exists): %s \\ %s" % (index + 1, total, where, it["name"]))
         msg = "%d / %d   %s \\ %s" % (index + 1, total, where, it["rel"])
         print("[LoadVideoBatchFolders] " + msg)
-        self._say(msg, unique_id)
-        return {"ui": {"rototools_index": [index]},
+        return {"ui": {"rototools_index": [index], "rototools_status": [msg]},
                 "result": (_make_video(it["path"]), it["name"], it["path"], index, total, zfolder)}
 
-    @staticmethod
-    def _say(text, unique_id):
-        try:
-            from server import PromptServer
-            if unique_id is not None:
-                PromptServer.instance.send_progress_text(text, unique_id)
-        except Exception:
-            pass
 
 
 NODE_CLASS_MAPPINGS = {"LoadVideoBatchFolders": LoadVideoBatchFolders}
