@@ -23,6 +23,8 @@ const CSS = `
 .rtb-tile:hover .rtb-tx { display:block; }
 .rtb-group .rtb-rm { float:right; background:#5a2d2d; color:#fbb; border:1px solid #844; border-radius:4px;
                      cursor:pointer; padding:0 6px; margin-left:8px; }
+.rtb-status { flex:0 0 auto; padding:2px 8px; background:#202a33; color:#fc3; font-size:11px;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rtb-scroll { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:6px; }
 .rtb-group { grid-column:1/-1; padding:6px 2px 2px; color:#9cf; border-bottom:1px solid #333; }
 .rtb-group small { color:#999; display:block; word-break:break-all; }
@@ -91,10 +93,12 @@ function setupNode(node) {
     size.value = node.properties?.rototools_tile || 150;
     size.title = "Preview size";
     bar.append(add, info, size, clear, refresh);
+    const status = el("div", "rtb-status");   // last run, one line (hidden until the node has run)
+    status.hidden = true;
     const scroll = el("div", "rtb-scroll");
     const grid = el("div", "rtb-grid");
     scroll.appendChild(grid);
-    root.append(bar, scroll);
+    root.append(bar, status, scroll);
 
     const state = { data: null, sig: "", tiles: [], current: -1, timer: null, seq: 0 };
 
@@ -164,9 +168,14 @@ function setupNode(node) {
         return t;
     }
 
-    function markCurrent(i) {
+    function markCurrent(i, text) {
         state.current = i;
         state.tiles.forEach((t, k) => t.classList.toggle("cur", k === i));
+        if (text) {
+            status.textContent = "Last run: " + text;
+            status.title = text;
+            status.hidden = false;
+        }
     }
 
     function render(data) {
@@ -394,7 +403,7 @@ app.registerExtension({
         nodeType.prototype.onExecuted = function (msg) {
             const r = onExecuted?.apply(this, arguments);
             const i = msg?.rototools_index?.[0];
-            if (i != null) this.rototools?.markCurrent(i);
+            if (i != null) this.rototools?.markCurrent(i, msg?.rototools_status?.[0]);
             return r;
         };
     },

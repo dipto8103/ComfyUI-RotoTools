@@ -3,6 +3,10 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.2] - 2026-10-23
+### Fixed
+- **Load Video Batch (Folders)**: the "n / total" run status is now one slim line in the preview ("Last run: …") instead of ComfyUI's large progress-text box under the node.
+
 ## [0.3.1] - 2026-10-23
 ### Added
 - **Load Video Batch (Folders)**: single videos. Drop videos onto the node (they are copied into `ComfyUI\input\rototools_drops`, like the normal Load Video does) or list video files in `batch_folder`, mixed freely with folders. Their zips go straight into the save folder (`SAVE FOLDER\clip.zip`); same-named videos from different places get their folder added (`clip (misc)`), and each zip name stays with its video from run to run (hidden `.rototools_singles.json`). ✕ on a single video's tile removes it.

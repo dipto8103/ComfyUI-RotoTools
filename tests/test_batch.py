@@ -248,6 +248,7 @@ def run(batch, monkeypatch, folders, **kw):
     args.update(kw)
     out = batch.LoadVideoBatchFolders().load(**args)
     assert out["ui"]["rototools_index"] == [args["index"]]
+    assert len(out["ui"]["rototools_status"]) == 1 and "\n" not in out["ui"]["rototools_status"][0]
     return out["result"], B
 
 
