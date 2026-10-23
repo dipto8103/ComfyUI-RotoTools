@@ -32,7 +32,7 @@ Outputs: `video`, `zip_name`, `video_path`, `index`, `total`.
 
 ## Install
 
-**ComfyUI-Manager / Registry** (once published): search for `ComfyUI-RotoTools`.
+**Comfy Registry / ComfyUI-Manager** (once published): search for `RotoTools` in ComfyUI-Manager, or run `comfy node install rototools`.
 
 **Manual:**
 ```
@@ -52,6 +52,10 @@ pip install -r requirements-dev.txt
 pytest
 ```
 The tests stub `folder_paths`, so ComfyUI itself is not needed.
+
+## Versions
+
+[Semantic Versioning](https://semver.org/). See [CHANGELOG.md](CHANGELOG.md); maintainers see [RELEASING.md](RELEASING.md).
 
 ## License
 

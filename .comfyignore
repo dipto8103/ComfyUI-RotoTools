@@ -1,0 +1,6 @@
+# Files that stay in git but are NOT shipped in the registry package
+tests/
+.github/
+pytest.ini
+requirements-dev.txt
+CHANGELOG.md

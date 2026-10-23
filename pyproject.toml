@@ -1,18 +1,22 @@
 [project]
-name = "comfyui-rototools"
-description = "Roto / alpha-matte helper nodes for ComfyUI: save an RGBA image sequence as one TGA zip named after the source video, and a spec readout (size / frames / fps) you can drop at any stage of a workflow."
+# The registry name is permanent once published. The Comfy Registry does not allow "ComfyUI" in it.
+name = "rototools"
+description = "Roto / alpha-matte helper nodes for ComfyUI: save an RGBA image sequence as one TGA zip named after the source video, batch-load a folder of folders of videos, and a spec readout (size / frames / fps)."
 version = "0.1.0"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+classifiers = [
+    "Operating System :: OS Independent",
+]
 
 [project.urls]
 Repository = "https://github.com/dipto8103/ComfyUI-RotoTools"
 "Bug Tracker" = "https://github.com/dipto8103/ComfyUI-RotoTools/issues"
+Changelog = "https://github.com/dipto8103/ComfyUI-RotoTools/blob/main/CHANGELOG.md"
 
 [tool.comfy]
-# Fill in your Comfy Registry publisher id before running `comfy node publish`.
-PublisherId = ""
+PublisherId = "dipto8103"
 DisplayName = "ComfyUI-RotoTools"
-Icon = ""
+Icon = "https://raw.githubusercontent.com/dipto8103/ComfyUI-RotoTools/main/icon.png"
