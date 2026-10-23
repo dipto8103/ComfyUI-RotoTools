@@ -6,4 +6,6 @@ if __package__:
 else:  # imported as a bare module (pytest's package collector); real errors must still surface inside ComfyUI
     NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = {}, {}
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+WEB_DIRECTORY = "./web"  # preview grid on Load Video Batch (Folders)
+
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
