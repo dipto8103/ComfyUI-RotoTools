@@ -282,8 +282,10 @@ def test_skip_if_zip_exists_per_folder(batch, monkeypatch, eps, tmp_path):
 
 
 def test_empty_folder_errors(batch, monkeypatch, tmp_path):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No videos"):
         run(batch, monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="list is empty"):
+        run(batch, monkeypatch, "  \n ")
 
 
 def test_scan_report_and_allowed_paths(batch, eps, tmp_path):

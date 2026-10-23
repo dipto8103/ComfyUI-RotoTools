@@ -74,6 +74,24 @@ function inputValue(node, name) {
     return w ? w.value : "";
 }
 
+// Set the index widget so the NEXT queued run loads video `value`. With ComfyUI's "control before generate"
+// setting, the frontend adds 1 before every queue except the first one after the page loaded; it remembers that
+// with a private symbol on the control widget (set after IS_CONTROL_WIDGET). Removing it makes the next queue
+// use the value as it is, like the very first run.
+function setIndex(node, value) {
+    const idx = node.widgets?.find((x) => x.name === "index");
+    if (!idx) return;
+    idx.value = value;
+    const mode = app.extensionManager?.setting?.get?.("Comfy.WidgetControlMode") ??
+                 app.ui?.settings?.getSettingValue?.("Comfy.WidgetControlMode");
+    if (mode === "before") {
+        const ctl = node.widgets.find((x) => x !== idx && typeof x.beforeQueued === "function");
+        const syms = ctl ? Object.getOwnPropertySymbols(ctl) : [];
+        if (syms.length >= 2) delete ctl[syms[syms.length - 1]];
+    }
+    node.graph?.setDirtyCanvas?.(true, true);
+}
+
 const media = (kind, path) => api.apiURL(`/rototools/batch/${kind}?path=${encodeURIComponent(path)}`);
 
 function setupNode(node) {
@@ -186,6 +204,18 @@ function setupNode(node) {
         const nSingles = data.groups.find((g) => g.kind === "files")?.count ?? 0;
         info.textContent = `${data.total} videos (${nFolders} folder(s)` + (nSingles ? `, ${nSingles} single` : "") + ")" +
             (doneCount ? `, ${doneCount} done (✓ skipped)` : "") + "  — set Run batch count to " + data.total;
+        // A new list starts from the first video: otherwise index keeps counting from the last batch and every
+        // run is "past the last video". Also when index is already past the end (finished batch, shorter list).
+        // Videos that are done are skipped quickly anyway. Not on the first scan after a workflow is opened.
+        const listChanged = state.sig !== "" && sig !== state.sig;
+        const idx = node.widgets?.find((x) => x.name === "index");
+        if (idx && idx.value !== 0 && (listChanged || (data.total > 0 && idx.value >= data.total))) {
+            setIndex(node, 0);
+            status.textContent = listChanged ? "List changed: index set back to 0 (first video)"
+                                             : "Batch finished: index set back to 0 (done videos are skipped)";
+            status.title = status.textContent;
+            status.hidden = false;
+        }
         if (sig === state.sig) {  // same list: only refresh the done marks
             data.items.forEach((it, k) => { if (state.tiles[k]) state.tiles[k]._done.textContent = it.done ? "✓" : ""; });
             return;
@@ -224,6 +254,7 @@ function setupNode(node) {
     async function scan() {
         const folders = String(inputValue(node, "batch_folder") || "").trim();
         if (!folders) {
+            if (state.sig !== "") setIndex(node, 0);   // emptied list: the next list starts at the first video
             state.sig = "";
             grid.textContent = "";
             info.textContent = "Add folders, drop videos here, or paste paths in batch_folder";
