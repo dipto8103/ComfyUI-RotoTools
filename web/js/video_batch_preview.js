@@ -16,6 +16,11 @@ const CSS = `
 .rtb-bar input[type=range] { width:90px; }
 .rtb-bar .rtb-add { background:#2d5a8a; border-color:#4a7fb5; font-weight:bold; }
 .rtb-bar button:disabled { opacity:.6; cursor:wait; }
+.rtb.rtb-drop { outline:3px dashed #6af; outline-offset:-3px; }
+.rtb-tile .rtb-tx { position:absolute; top:2px; left:2px; width:20px; height:18px; padding:0; font-size:11px;
+                    background:rgba(90,45,45,.85); color:#fbb; border:1px solid #844; border-radius:3px; cursor:pointer;
+                    display:none; }
+.rtb-tile:hover .rtb-tx { display:block; }
 .rtb-group .rtb-rm { float:right; background:#5a2d2d; color:#fbb; border:1px solid #844; border-radius:4px;
                      cursor:pointer; padding:0 6px; margin-left:8px; }
 .rtb-scroll { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:6px; }
@@ -108,7 +113,7 @@ function setupNode(node) {
     function openFull(it, g) {
         closeFull();
         const full = el("div", "rtb-full");
-        const title = el("div", "rtb-ftitle", `#${it.i + 1}  ${g.label} \\ ${it.rel}   (${it.path})`);
+        const title = el("div", "rtb-ftitle", `#${it.i + 1}  ${g.label || "single video"} \\ ${it.rel}   (${it.path})`);
         const v = el("video");
         v.src = media("video", it.path);
         v.controls = true;
@@ -124,7 +129,7 @@ function setupNode(node) {
 
     function tile(it, g) {
         const t = el("div", "rtb-tile");
-        t.title = `#${it.i + 1}  ${g.label} \\ ${it.rel}\nzip: ${g.out}\\${it.name}.zip`;
+        t.title = `#${it.i + 1}  ${g.label || "single video"} \\ ${it.rel}\n${it.path}\nzip: ${g.out}\\${it.name}.zip`;
         const img = el("img");
         img.loading = "lazy";
         img.src = media("thumb", it.path);
@@ -149,6 +154,12 @@ function setupNode(node) {
             if (vid) { vid.pause(); vid.removeAttribute("src"); vid.load(); vid.remove(); vid = null; }
         });
         t.addEventListener("click", () => openFull(it, g));
+        if (g.kind === "files") {
+            const x = el("button", "rtb-tx", "✕");
+            x.title = "Take this video out of the batch (nothing is deleted on disk)";
+            x.addEventListener("click", (e) => { e.stopPropagation(); removeEntries([it.key]); });
+            t.appendChild(x);
+        }
         t._done = done;
         return t;
     }
@@ -162,7 +173,9 @@ function setupNode(node) {
         const sig = JSON.stringify([data.groups.map((g) => [g.label, g.root, g.out]), data.items.map((i) => i.path)]);
         state.data = data;
         const doneCount = data.items.filter((i) => i.done).length;
-        info.textContent = `${data.total} videos in ${data.groups.length} folder(s)` +
+        const nFolders = data.groups.filter((g) => g.kind !== "files").length;
+        const nSingles = data.groups.find((g) => g.kind === "files")?.count ?? 0;
+        info.textContent = `${data.total} videos (${nFolders} folder(s)` + (nSingles ? `, ${nSingles} single` : "") + ")" +
             (doneCount ? `, ${doneCount} done (✓ skipped)` : "") + "  — set Run batch count to " + data.total;
         if (sig === state.sig) {  // same list: only refresh the done marks
             data.items.forEach((it, k) => { if (state.tiles[k]) state.tiles[k]._done.textContent = it.done ? "✓" : ""; });
@@ -177,9 +190,17 @@ function setupNode(node) {
         data.groups.forEach((g, gi) => {
             const h = el("div", "rtb-group");
             const rm = el("button", "rtb-rm", "✕ remove");
-            rm.title = "Take this folder out of the batch (nothing is deleted on disk)";
-            rm.addEventListener("click", () => removeFolder(g.key));
-            h.append(rm, `${g.label}  (${g.count} videos)  → ${g.out}`, el("small", null, g.root));
+            if (g.kind === "files") {
+                rm.textContent = "✕ remove all";
+                rm.title = "Take all single videos out of the batch (nothing is deleted on disk)";
+                rm.addEventListener("click", () => removeEntries(data.items.filter((i) => i.group === gi).map((i) => i.key)));
+                h.append(rm, `Single videos  (${g.count})  → ${g.out}`,
+                         el("small", null, "zips go straight into the save folder, named after each video"));
+            } else {
+                rm.title = "Take this folder out of the batch (nothing is deleted on disk)";
+                rm.addEventListener("click", () => removeEntries([g.key]));
+                h.append(rm, `${g.label}  (${g.count} videos)  → ${g.out}`, el("small", null, g.root));
+            }
             grid.appendChild(h);
             for (const it of data.items) {
                 if (it.group !== gi) continue;
@@ -196,7 +217,7 @@ function setupNode(node) {
         if (!folders) {
             state.sig = "";
             grid.textContent = "";
-            info.textContent = "Type or paste one or more folders (comma separated) in batch_folder";
+            info.textContent = "Add folders, drop videos here, or paste paths in batch_folder";
             return;
         }
         const seq = ++state.seq;
@@ -227,14 +248,69 @@ function setupNode(node) {
         scanSoon(50);
     }
 
-    function removeFolder(key) {
-        const left = (state.data?.folders ?? []).filter((f) => f.key !== key).map((f) => f.path);
+    function removeEntries(keys) {
+        const drop = new Set(keys);
+        const left = (state.data?.folders ?? []).filter((f) => !drop.has(f.key)).map((f) => f.path);
         setFolders(left.join("\n"));
     }
 
+    // ---- dropped videos: uploaded (copied) into ComfyUI's input folder, then listed by that path
+    async function addDropped(dt) {
+        const exts = String(inputValue(node, "extensions") || "mp4,mov,mkv,avi,webm,m4v")
+            .split(",").map((e) => "." + e.trim().toLowerCase().replace(/^\./, "")).filter((e) => e.length > 1);
+        const entries = [...(dt.items ?? [])].map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
+        const folders = entries.filter((e) => e.isDirectory).length;
+        const files = [...(dt.files ?? [])].filter((f) => exts.some((e) => f.name.toLowerCase().endsWith(e)));
+        if (!files.length) {
+            alert(folders ? "Folders cannot be dropped (the browser does not tell ComfyUI where they are). " +
+                            "Use + Add folders… instead." : "No video files in what was dropped (" + exts.join(" ") + ").");
+            return;
+        }
+        const added = [];
+        try {
+            for (const [k, f] of files.entries()) {
+                info.textContent = `Copying dropped video ${k + 1} / ${files.length} into ComfyUI: ${f.name}…`;
+                const body = new FormData();
+                body.append("file", f, f.name);
+                const r = await api.fetchApi("/rototools/batch/upload", { method: "POST", body });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+                added.push(data.path);
+            }
+        } catch (e) {
+            alert("Dropping videos: " + e.message);
+        } finally {
+            if (added.length) {
+                const have = new Set((state.data?.folders ?? []).map((f) => f.key));
+                const cur = String(inputValue(node, "batch_folder") || "").trim();
+                const fresh = added.filter((p) => !have.has(p.toLowerCase()));
+                setFolders([cur, ...fresh].filter(Boolean).join("\n"));
+            } else {
+                scanSoon(50);
+            }
+            if (folders) alert(`${folders} folder(s) were skipped: folders cannot be dropped, use + Add folders…`);
+        }
+    }
+    const isFileDrag = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+    root.addEventListener("dragover", (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
+        root.classList.add("rtb-drop");
+    });
+    root.addEventListener("dragleave", (e) => { if (!root.contains(e.relatedTarget)) root.classList.remove("rtb-drop"); });
+    root.addEventListener("drop", (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        root.classList.remove("rtb-drop");
+        addDropped(e.dataTransfer);
+    });
+
     clear.addEventListener("click", () => {
         if (!String(inputValue(node, "batch_folder") || "").trim()) return;
-        if (confirm("Remove all folders from this batch? (Nothing is deleted on disk.)")) setFolders("");
+        if (confirm("Remove all folders and videos from this batch? (Nothing is deleted on disk.)")) setFolders("");
     });
 
     add.addEventListener("click", async () => {
@@ -273,7 +349,7 @@ function setupNode(node) {
     });
     widget.serialize = false;
 
-    node.rototools = { scan, scanSoon, markCurrent, state };
+    node.rototools = { scan, scanSoon, markCurrent, addDropped, isFileDrag, state };
     const s = node.size;
     node.setSize([Math.max(s[0], 560), Math.max(s[1], 640)]);
 }
@@ -294,6 +370,19 @@ app.registerExtension({
             const r = onConfigure?.apply(this, arguments);
             this.rototools?.scanSoon(300);  // values from the saved workflow are in place now
             return r;
+        };
+        // videos dropped on the node itself (title, widgets), not only on the preview area
+        const onDragOver = nodeType.prototype.onDragOver;
+        nodeType.prototype.onDragOver = function (e) {
+            return this.rototools?.isFileDrag(e) || onDragOver?.apply(this, arguments) || false;
+        };
+        const onDragDrop = nodeType.prototype.onDragDrop;
+        nodeType.prototype.onDragDrop = function (e) {
+            if (this.rototools?.isFileDrag(e)) {
+                this.rototools.addDropped(e.dataTransfer);
+                return true;
+            }
+            return onDragDrop?.apply(this, arguments) || false;
         };
         const onConnectionsChange = nodeType.prototype.onConnectionsChange;
         nodeType.prototype.onConnectionsChange = function () {
