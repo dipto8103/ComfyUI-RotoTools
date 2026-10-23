@@ -1,0 +1,18 @@
+[project]
+name = "comfyui-rototools"
+description = "Roto / alpha-matte helper nodes for ComfyUI: save an RGBA image sequence as one TGA zip named after the source video, and a spec readout (size / frames / fps) you can drop at any stage of a workflow."
+version = "0.1.0"
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/dipto8103/ComfyUI-RotoTools"
+"Bug Tracker" = "https://github.com/dipto8103/ComfyUI-RotoTools/issues"
+
+[tool.comfy]
+# Fill in your Comfy Registry publisher id before running `comfy node publish`.
+PublisherId = ""
+DisplayName = "ComfyUI-RotoTools"
+Icon = ""
