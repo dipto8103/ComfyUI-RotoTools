@@ -3,6 +3,10 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.5] - 2026-10-27
+### Changed
+- **Load Video Batch (Folders)**: each preview tile shows the shot name with its **duration and frame count** (`55 · 2.96 s · 74 frames`) instead of the list number and the name (which looked doubled when shots are named by number). The list number is in the tile's tooltip. Read from the video header only, once the tile is on screen.
+
 ## [0.3.4] - 2026-10-27
 ### Changed
 - **Load Video Batch (Folders)**: with `skip_if_zip_exists` on (the default), every run now takes **the next video that has no zip yet**, whatever `index` says. Cancelled queues, restarts or a queue that ran ahead can no longer skip videos (a 372-video batch had skipped 84). A video whose run left no zip is tried once more; after a second try it is passed over (until ComfyUI restarts or Clear), so one broken video cannot use up the queue. Every decision is logged as `[LoadVideoBatchFolders] …` in ComfyUI's console. `index` is only used with `skip_if_zip_exists` off (to redo a video).

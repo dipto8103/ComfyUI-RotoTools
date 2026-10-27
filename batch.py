@@ -542,6 +542,32 @@ def parse_picker_output(text):
     return out
 
 
+_INFO = {}   # (path, mtime, size) -> video_info result
+
+
+def video_info(path):
+    """{"frames", "seconds", "fps", "exact"} of a video, read from its header only (fast, no decoding).
+    exact is False when the file has no frame count and frames is worked out from duration x fps."""
+    st = os.stat(path)
+    key = (path, st.st_mtime, st.st_size)
+    if key in _INFO:
+        return _INFO[key]
+    import av
+    with av.open(path) as c:
+        s = c.streams.video[0]
+        fps = float(s.average_rate or s.guessed_rate or 0)
+        if s.duration and s.time_base:
+            seconds = float(s.duration * s.time_base)
+        else:
+            seconds = float(c.duration or 0) / 1000000.0   # container duration is in microseconds
+        frames, exact = int(s.frames or 0), True
+        if frames <= 0 and fps and seconds:
+            frames, exact = int(round(seconds * fps)), False
+    info = {"frames": frames, "seconds": round(seconds, 2), "fps": round(fps, 3), "exact": exact}
+    _INFO[key] = info
+    return info
+
+
 def make_thumb(path, size=320):
     """JPEG bytes of the first frame (cached in ComfyUI's temp folder)."""
     st = os.stat(path)
@@ -667,6 +693,22 @@ def _register_routes():
             return web.json_response({"error": "Folder dialog failed: " + (msg or "exit %s" % proc.returncode)},
                                      status=500)
         return web.json_response({"picked": picked, "text": merge_folders(body.get("current", ""), picked)})
+
+    @routes.get("/rototools/batch/info")
+    async def _info(request):
+        global _THUMB_LOCK
+        path = request.rel_url.query.get("path", "")
+        if not _allowed(path):
+            return web.Response(status=404)
+        if _THUMB_LOCK is None:
+            _THUMB_LOCK = asyncio.Semaphore(4)
+        async with _THUMB_LOCK:
+            try:
+                info = await asyncio.get_running_loop().run_in_executor(None, video_info, path)
+            except Exception as e:
+                log("no frame count for %s: %s" % (path, e))
+                return web.json_response({"error": str(e)}, status=415)
+        return web.json_response(info, headers={"Cache-Control": "max-age=3600"})
 
     @routes.get("/rototools/batch/video")
     async def _video(request):

@@ -363,6 +363,24 @@ def test_failed_video_is_retried_once_then_passed_over(batch, monkeypatch, eps, 
     assert run(batch, monkeypatch, text, output_folder=str(out))[0][1] == "shot1"
 
 
+def test_video_info_reads_frames_and_duration(batch, tmp_path):
+    av = pytest.importorskip("av")
+    np = pytest.importorskip("numpy")
+    path = str(tmp_path / "clip.mp4")
+    with av.open(path, "w") as c:
+        s = c.add_stream("mpeg4", rate=25)
+        s.width, s.height, s.pix_fmt = 64, 48, "yuv420p"
+        for _ in range(17):
+            frame = av.VideoFrame.from_ndarray(np.zeros((48, 64, 3), dtype=np.uint8), format="rgb24")
+            for p in s.encode(frame):
+                c.mux(p)
+        for p in s.encode():
+            c.mux(p)
+    info = batch.video_info(path)
+    assert info["frames"] == 17 and info["fps"] == 25 and abs(info["seconds"] - 0.68) < 0.05
+    assert batch.video_info(path) is info   # cached until the file changes
+
+
 def test_excluded_keys(batch, tmp_path):
     a = str(tmp_path / "A" / "x.mp4")
     # same file on Windows (case-insensitive), two files on Linux / macOS

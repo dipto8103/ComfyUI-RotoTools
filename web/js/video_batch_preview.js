@@ -41,7 +41,9 @@ const CSS = `
 .rtb-tile.cur { border-color:#fc3; }
 .rtb-tile img, .rtb-tile video { width:100%; height:100%; object-fit:contain; display:block; }
 .rtb-tile .rtb-lbl { position:absolute; left:0; right:0; bottom:0; padding:1px 4px; background:rgba(0,0,0,.65);
-                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; }
+                     display:flex; gap:8px; white-space:nowrap; font-size:11px; }
+.rtb-tile .rtb-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.rtb-tile .rtb-stat { flex:0 0 auto; color:#bfe0ff; }
 .rtb-tile .rtb-done { position:absolute; top:2px; right:4px; color:#5d5; font-weight:bold; text-shadow:0 0 3px #000; }
 .rtb-full { position:absolute; inset:0; background:#000; display:flex; flex-direction:column; z-index:2; }
 .rtb-full video { flex:1 1 auto; width:100%; min-height:0; object-fit:contain; background:#000; }
@@ -190,12 +192,31 @@ function setupNode(node) {
 
     function tile(it, g) {
         const t = el("div", "rtb-tile");
-        t.title = `#${it.i + 1}  ${g.label || "single video"} \\ ${it.rel}\n${it.path}\nzip: ${g.out}\\${it.name}.zip`;
+        t.title = `#${it.i + 1} in the list  ·  ${g.label || "single video"} \\ ${it.rel}\n${it.path}\nzip: ${g.out}\\${it.name}.zip`;
         const img = el("img");
         img.loading = "lazy";
         img.src = media("thumb", it.path);
-        img.onerror = () => { img.style.visibility = "hidden"; };
-        const lbl = el("div", "rtb-lbl", `${it.i + 1}  ${it.name}`);
+        const lbl = el("div", "rtb-lbl");
+        const lname = el("span", "rtb-name", it.name);
+        const lstat = el("span", "rtb-stat");   // never cut: only a long name gets the "…"
+        lbl.append(lname, lstat);
+        // duration and frame count, read once the tile is on screen (the lazy thumbnail has loaded)
+        let asked = false;
+        const showInfo = async () => {
+            if (asked) return;
+            asked = true;
+            try {
+                const r = await api.fetchApi(`/rototools/batch/info?path=${encodeURIComponent(it.path)}`);
+                if (!r.ok) return;
+                const v = await r.json();
+                lstat.textContent = `${v.seconds.toFixed(2)} s  ·  ${v.exact ? "" : "~"}${v.frames} frames`;
+                lbl.title = `${v.frames} frames${v.exact ? "" : " (estimated)"}, ${v.seconds.toFixed(2)} s at ${v.fps} fps`;
+            } catch (e) {
+                console.error("[RotoTools] no frame count for", it.path, e);
+            }
+        };
+        img.onload = showInfo;
+        img.onerror = () => { img.style.visibility = "hidden"; showInfo(); };
         const done = el("span", "rtb-done", it.done ? "✓" : "");
         done.title = "zip already exists (will be skipped)";
         t.append(img, lbl, done);
