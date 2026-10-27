@@ -21,6 +21,12 @@ const CSS = `
                     background:rgba(90,45,45,.85); color:#fbb; border:1px solid #844; border-radius:3px; cursor:pointer;
                     display:none; }
 .rtb-tile:hover .rtb-tx { display:block; }
+.rtb-tile.ex img, .rtb-tile.ex .rtb-lbl { opacity:.25; filter:grayscale(1); }
+.rtb-tile.ex .rtb-tx { display:none !important; }
+.rtb-tile .rtb-undo { position:absolute; inset:auto 0 18px 0; margin:auto; width:72px; height:20px; padding:0;
+                      font-size:11px; background:#2d5a8a; color:#fff; border:1px solid #4a7fb5; border-radius:3px;
+                      cursor:pointer; display:none; }
+.rtb-tile.ex .rtb-undo { display:block; top:0; bottom:0; }
 .rtb-group .rtb-rm { float:right; background:#5a2d2d; color:#fbb; border:1px solid #844; border-radius:4px;
                      cursor:pointer; padding:0 6px; margin-left:8px; }
 .rtb-status { flex:0 0 auto; padding:2px 8px; background:#202a33; color:#fc3; font-size:11px;
@@ -92,6 +98,16 @@ function setIndex(node, value) {
     node.graph?.setDirtyCanvas?.(true, true);
 }
 
+// what the node does, in the browser console (F12), next to the [LoadVideoBatchFolders] lines in ComfyUI's console
+const rlog = (...a) => console.info("[RotoTools]", ...a);
+
+// comparable key of a listed path, close to Python's os.path.normcase on Windows
+const pkey = (p) => String(p).trim().replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+
+// entries of a batch_folder / excluded text, like batch.split_folders (lines, commas, "quoted" paths)
+const parseList = (text) => [...String(text || "").matchAll(/"([^"]*)"|([^",\r\n]+)/g)]
+    .map((m) => (m[1] ?? m[2]).trim()).filter(Boolean);
+
 const media = (kind, path) => api.apiURL(`/rototools/batch/${kind}?path=${encodeURIComponent(path)}`);
 
 function setupNode(node) {
@@ -102,7 +118,7 @@ function setupNode(node) {
     const add = el("button", "rtb-add", "+ Add folders…");
     add.title = "Pick one or more folders (Ctrl / Shift click). Open it again to add folders from another drive.";
     const clear = el("button", null, "Clear");
-    clear.title = "Remove all folders from the list";
+    clear.title = "Remove all folders, videos and exclusions; the node is ready for new folders";
     const refresh = el("button", null, "Refresh");
     const size = el("input");
     size.type = "range";
@@ -119,6 +135,29 @@ function setupNode(node) {
     root.append(bar, status, scroll);
 
     const state = { data: null, sig: "", tiles: [], current: -1, timer: null, seq: 0 };
+
+    // ---- excluded videos: kept in the hidden "excluded" widget (one path per line), saved with the workflow
+    const exW = node.widgets?.find((x) => x.name === "excluded");
+    if (exW) {   // hidden on both the classic canvas and the "Nodes 2.0" renderer (which reads options.hidden)
+        exW.hidden = true;
+        exW.options = exW.options || {};
+        exW.options.hidden = true;
+        exW.computeSize = () => [0, -4];
+    }
+    const excludedSet = () => new Set(parseList(exW?.value).map(pkey));
+    function setExcluded(paths) {
+        if (!exW) return;
+        exW.value = paths.join("\n");
+        node.graph?.setDirtyCanvas?.(true, true);
+    }
+    function toggleExcluded(it) {
+        const cur = parseList(exW?.value);
+        const k = pkey(it.path);
+        const on = !cur.some((p) => pkey(p) === k);
+        setExcluded(on ? [...cur, it.path] : cur.filter((p) => pkey(p) !== k));
+        rlog(on ? "excluded" : "included again", it.path);
+        if (state.data) render(state.data, true);
+    }
 
     const applySize = () => {
         grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size.value}px, 1fr))`;
@@ -176,13 +215,15 @@ function setupNode(node) {
             if (vid) { vid.pause(); vid.removeAttribute("src"); vid.load(); vid.remove(); vid = null; }
         });
         t.addEventListener("click", () => openFull(it, g));
-        if (g.kind === "files") {
-            const x = el("button", "rtb-tx", "✕");
-            x.title = "Take this video out of the batch (nothing is deleted on disk)";
-            x.addEventListener("click", (e) => { e.stopPropagation(); removeEntries([it.key]); });
-            t.appendChild(x);
-        }
+        const x = el("button", "rtb-tx", "✕");
+        x.title = "Leave this video out of the batch (nothing is deleted on disk)";
+        x.addEventListener("click", (e) => { e.stopPropagation(); toggleExcluded(it); });
+        const undo = el("button", "rtb-undo", "↺ undo");
+        undo.title = "Put this video back in the batch";
+        undo.addEventListener("click", (e) => { e.stopPropagation(); toggleExcluded(it); });
+        t.append(x, undo);
         t._done = done;
+        t._key = pkey(it.path);
         return t;
     }
 
@@ -199,25 +240,27 @@ function setupNode(node) {
     function render(data) {
         const sig = JSON.stringify([data.groups.map((g) => [g.label, g.root, g.out]), data.items.map((i) => i.path)]);
         state.data = data;
-        const doneCount = data.items.filter((i) => i.done).length;
+        const ex = excludedSet();
+        const nEx = data.items.filter((i) => ex.has(pkey(i.path))).length;
+        const doneCount = data.items.filter((i) => i.done && !ex.has(pkey(i.path))).length;
+        const left = data.total - nEx - doneCount;
         const nFolders = data.groups.filter((g) => g.kind !== "files").length;
         const nSingles = data.groups.find((g) => g.kind === "files")?.count ?? 0;
         info.textContent = `${data.total} videos (${nFolders} folder(s)` + (nSingles ? `, ${nSingles} single` : "") + ")" +
-            (doneCount ? `, ${doneCount} done (✓ skipped)` : "") + "  — set Run batch count to " + data.total;
-        // A new list starts from the first video: otherwise index keeps counting from the last batch and every
-        // run is "past the last video". Also when index is already past the end (finished batch, shorter list).
-        // Videos that are done are skipped quickly anyway. Not on the first scan after a workflow is opened.
+            (doneCount ? `, ${doneCount} done` : "") + (nEx ? `, ${nEx} left out` : "") +
+            `  — ${left} to do: set Run batch count to ${left}`;
+        // A new or finished list starts again at index 0 (only matters with skip_if_zip_exists off: otherwise
+        // every run takes the next video without a zip by itself). Not on the first scan after opening a workflow.
         const listChanged = state.sig !== "" && sig !== state.sig;
         const idx = node.widgets?.find((x) => x.name === "index");
-        if (idx && idx.value !== 0 && (listChanged || (data.total > 0 && idx.value >= data.total))) {
-            setIndex(node, 0);
-            status.textContent = listChanged ? "List changed: index set back to 0 (first video)"
-                                             : "Batch finished: index set back to 0 (done videos are skipped)";
-            status.title = status.textContent;
-            status.hidden = false;
-        }
-        if (sig === state.sig) {  // same list: only refresh the done marks
-            data.items.forEach((it, k) => { if (state.tiles[k]) state.tiles[k]._done.textContent = it.done ? "✓" : ""; });
+        if (idx && idx.value !== 0 && (listChanged || (data.total > 0 && idx.value >= data.total))) setIndex(node, 0);
+        if (sig === state.sig) {  // same list: only refresh the done and left-out marks
+            data.items.forEach((it, k) => {
+                const t = state.tiles[k];
+                if (!t) return;
+                t._done.textContent = it.done ? "✓" : "";
+                t.classList.toggle("ex", ex.has(t._key));
+            });
             return;
         }
         state.sig = sig;
@@ -244,6 +287,7 @@ function setupNode(node) {
             for (const it of data.items) {
                 if (it.group !== gi) continue;
                 const t = tile(it, g);
+                t.classList.toggle("ex", ex.has(t._key));
                 state.tiles[it.i] = t;
                 grid.appendChild(t);
             }
@@ -253,27 +297,37 @@ function setupNode(node) {
 
     async function scan() {
         const folders = String(inputValue(node, "batch_folder") || "").trim();
+        const seq = ++state.seq;
         if (!folders) {
             if (state.sig !== "") setIndex(node, 0);   // emptied list: the next list starts at the first video
+            // forget the old list completely, or videos dropped next would look "already listed"
             state.sig = "";
+            state.data = null;
+            state.tiles = [];
+            closeFull();
             grid.textContent = "";
             info.textContent = "Add folders, drop videos here, or paste paths in batch_folder";
             return;
         }
-        const seq = ++state.seq;
         info.textContent = "Scanning…";
-        const q = new URLSearchParams({
+        const body = {
             folders,
             output_folder: String(inputValue(node, "output_folder") || ""),
             extensions: String(inputValue(node, "extensions") || ""),
             recursive: inputValue(node, "recursive") === false ? "0" : "1",
-        });
+        };
         try {
-            const r = await api.fetchApi(`/rototools/batch/scan?${q}`);
+            const r = await api.fetchApi("/rototools/batch/scan", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            });
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data = await r.json();
-            if (seq === state.seq) render(data);
+            if (seq !== state.seq) return;
+            render(data);
+            rlog(`scan: ${data.total} videos in ${data.groups.length} group(s)` +
+                 (data.errors.length ? `, problems: ${data.errors.join(" | ")}` : ""));
         } catch (e) {
+            console.error("[RotoTools] scan failed", e);
             if (seq === state.seq) info.textContent = "Scan failed: " + e.message;
         }
     }
@@ -291,6 +345,7 @@ function setupNode(node) {
     function removeEntries(keys) {
         const drop = new Set(keys);
         const left = (state.data?.folders ?? []).filter((f) => !drop.has(f.key)).map((f) => f.path);
+        rlog(`removed ${keys.length} entr${keys.length === 1 ? "y" : "ies"} from the list`);
         setFolders(left.join("\n"));
     }
 
@@ -321,9 +376,12 @@ function setupNode(node) {
             alert("Dropping videos: " + e.message);
         } finally {
             if (added.length) {
-                const have = new Set((state.data?.folders ?? []).map((f) => f.key));
+                // compare with what is listed NOW (not the last scan, which can be from before Clear)
                 const cur = String(inputValue(node, "batch_folder") || "").trim();
-                const fresh = added.filter((p) => !have.has(p.toLowerCase()));
+                const have = new Set(parseList(cur).map(pkey));
+                const fresh = added.filter((p) => !have.has(pkey(p)));
+                rlog(`dropped ${files.length} video(s): ${fresh.length} added` +
+                     (added.length - fresh.length ? `, ${added.length - fresh.length} already in the list` : ""), fresh);
                 setFolders([cur, ...fresh].filter(Boolean).join("\n"));
             } else {
                 scanSoon(50);
@@ -349,8 +407,17 @@ function setupNode(node) {
     });
 
     clear.addEventListener("click", () => {
-        if (!String(inputValue(node, "batch_folder") || "").trim()) return;
-        if (confirm("Remove all folders and videos from this batch? (Nothing is deleted on disk.)")) setFolders("");
+        const listed = String(inputValue(node, "batch_folder") || "").trim() || String(exW?.value || "").trim();
+        if (listed && !confirm("Remove all folders, videos and left-out marks from this batch? " +
+                               "(Nothing is deleted on disk.)")) return;
+        // back to an empty node: list, left-out videos, last-run line, index and the failed-video memory
+        setExcluded([]);
+        status.hidden = true;
+        status.textContent = "";
+        state.current = -1;
+        setFolders("");
+        api.fetchApi("/rototools/batch/reset", { method: "POST" }).catch(() => {});
+        rlog("cleared: the node is empty and ready for new folders / videos");
     });
 
     add.addEventListener("click", async () => {
@@ -366,6 +433,7 @@ function setupNode(node) {
             });
             const data = await r.json();
             if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+            rlog(`folder dialog: ${data.picked.length} folder(s) picked`, data.picked);
             if (data.picked.length) setFolders(data.text);
         } catch (e) {
             alert("Add folders: " + e.message);
@@ -435,6 +503,7 @@ app.registerExtension({
             const r = onExecuted?.apply(this, arguments);
             const i = msg?.rototools_index?.[0];
             if (i != null) this.rototools?.markCurrent(i, msg?.rototools_status?.[0]);
+            if (msg?.rototools_status) rlog("run:", msg.rototools_status[0]);
             return r;
         };
     },

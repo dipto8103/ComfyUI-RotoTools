@@ -19,6 +19,12 @@ def make(base, rels):
     return base
 
 
+@pytest.fixture(autouse=True)
+def fresh_attempts(batch):
+    batch.reset_attempts()   # the failed-video memory is per ComfyUI session; each test starts clean
+    yield
+
+
 @pytest.fixture
 def tree(tmp_path):
     return make(tmp_path / "ep93", ["A/clip1.mp4", "A/clip10.mp4", "A/clip2.mov", "B/deep/x.mkv", "B/notes.txt",
@@ -142,10 +148,10 @@ def test_same_folder_name_and_same_parent_name(batch, tmp_path):
 def test_load_records_the_input_folder(batch, monkeypatch, eps, tmp_path):
     out = tmp_path / "out"
     text = "%s, %s" % (eps / "x" / "ep93", eps / "y" / "ep93")
-    run(batch, monkeypatch, text, index=4, output_folder=str(out))         # y\ep93\shot1
+    run(batch, monkeypatch, text, index=4, output_folder=str(out), skip_if_zip_exists=False)   # y\ep93\shot1
     with open(out / "ep93 (y)" / batch.SOURCE_MARK, encoding="utf-8") as f:
         assert f.read().strip() == str(eps / "y" / "ep93")
-    run(batch, monkeypatch, str(eps / "y" / "ep93"), index=0, output_folder=str(out))
+    run(batch, monkeypatch, str(eps / "y" / "ep93"), index=0, output_folder=str(out), skip_if_zip_exists=False)
     assert sorted(os.listdir(out)) == ["ep93 (y)"]                          # alone: same folder, no new one
 
 
@@ -197,8 +203,8 @@ def test_load_single_video_saves_into_output_folder(batch, nodes_mod, make_frame
             rle_compression=True, overwrite=False, preview_frames=0, save_as_zip=True,
             source_video=FakeVideo(path), zip_name=name)
     assert sorted(os.listdir(out)) == [batch.SINGLES_MARK, "clip_a.zip", "ep94"]
-    out_, B = run(batch, monkeypatch, text, index=0, output_folder=str(out))   # resume: skipped
-    assert all(isinstance(o, B) for o in out_)
+    out_, B = run(batch, monkeypatch, text, output_folder=str(out))   # resume: the next video without a zip
+    assert out_[1] == "shot2" and out_[5] == str(out / "ep94")
     rep = batch.scan_report(text, batch.DEFAULT_EXTS, True, str(out))
     assert rep["groups"][0]["out"] == str(out) and rep["items"][0]["done"] and rep["items"][0]["key"]
 
@@ -247,7 +253,9 @@ def run(batch, monkeypatch, folders, **kw):
                 extensions=batch.DEFAULT_EXTS, recursive=True)
     args.update(kw)
     out = batch.LoadVideoBatchFolders().load(**args)
-    assert out["ui"]["rototools_index"] == [args["index"]]
+    assert len(out["ui"]["rototools_index"]) == 1
+    if not args["skip_if_zip_exists"]:
+        assert out["ui"]["rototools_index"] == [args["index"]]
     assert len(out["ui"]["rototools_status"]) == 1 and "\n" not in out["ui"]["rototools_status"][0]
     return out["result"], B
 
@@ -257,14 +265,15 @@ def test_load_each_index(batch, monkeypatch, eps, tmp_path):
     groups, items, _ = batch.scan_batch(text)
     out_root = tmp_path / "out"
     for i, it in enumerate(items):
-        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root))
+        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
+                                                          skip_if_zip_exists=False)
         assert video == ("VIDEO", it["path"]) and path == it["path"] and idx == i and total == len(items)
         assert name == it["name"]
         assert zfolder == str(out_root / groups[it["group"]]["label"])
 
 
 def test_index_past_end_is_blocked_not_error(batch, monkeypatch, tree):
-    out, B = run(batch, monkeypatch, tree, index=99)
+    out, B = run(batch, monkeypatch, tree, index=99, skip_if_zip_exists=False)
     assert len(out) == 6 and all(isinstance(o, B) for o in out)
 
 
@@ -273,12 +282,12 @@ def test_skip_if_zip_exists_per_folder(batch, monkeypatch, eps, tmp_path):
     out_root = tmp_path / "out"
     (out_root / "ep93").mkdir(parents=True)
     (out_root / "ep93" / "shot1.zip").write_bytes(b"z")
-    out, B = run(batch, monkeypatch, text, index=0, output_folder=str(out_root))   # ep93 shot1: done
-    assert all(isinstance(o, B) for o in out)
-    out, B = run(batch, monkeypatch, text, index=4, output_folder=str(out_root))   # ep94 shot1: same name, not done
-    assert not isinstance(out[0], B) and out[1] == "shot1" and out[5] == str(out_root / "ep94")
+    out, B = run(batch, monkeypatch, text, output_folder=str(out_root))   # ep93 shot1 done: the next one
+    assert out[1] == "extra" and out[3] == 1
+    out, B = run(batch, monkeypatch, text, index=4, output_folder=str(out_root), skip_if_zip_exists=False)
+    assert out[1] == "shot1" and out[5] == str(out_root / "ep94")             # same name, other episode
     out, B = run(batch, monkeypatch, text, index=0, output_folder=str(out_root), skip_if_zip_exists=False)
-    assert not isinstance(out[0], B)
+    assert out[1] == "shot1" and out[5] == str(out_root / "ep93")             # index mode redoes a done one
 
 
 def test_empty_folder_errors(batch, monkeypatch, tmp_path):
@@ -307,7 +316,8 @@ def test_saver_writes_into_episode_folder(batch, nodes_mod, make_frames, monkeyp
     text = "%s, %s" % (eps / "x" / "ep93", eps / "x" / "ep94")
     out_root = tmp_path / "out"
     for i in (0, 4):   # ep93/shot1 and ep94/shot1: same video name, different episodes
-        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root))
+        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
+                                                          skip_if_zip_exists=False)
         nodes_mod.SaveImageSequenceTGA().save(
             images=make_frames(1), output_folder=zfolder, filename_prefix="frame", start_number=0, digits=5,
             rle_compression=True, overwrite=False, preview_frames=0, save_as_zip=True,
@@ -315,3 +325,46 @@ def test_saver_writes_into_episode_folder(batch, nodes_mod, make_frames, monkeyp
     assert sorted(os.listdir(out_root)) == ["ep93", "ep94"]
     for ep in ("ep93", "ep94"):
         assert sorted(os.listdir(out_root / ep)) == [batch.SOURCE_MARK, "shot1.zip"]
+
+
+def zip_for(out, ep, name):
+    (out / ep).mkdir(parents=True, exist_ok=True)
+    (out / ep / (name + ".zip")).write_bytes(b"z")
+
+
+def test_next_without_zip_ignores_index_and_skips_done_and_excluded(batch, monkeypatch, eps, tmp_path):
+    out = tmp_path / "out"
+    text = "%s\n%s" % (eps / "x" / "ep93", eps / "x" / "ep94")
+    picked = []
+    for _ in range(3):   # index far ahead of the work (a queue that ran ahead: the "84 skipped" case)
+        res, B = run(batch, monkeypatch, text, index=250, output_folder=str(out))
+        picked.append(res[1])
+        zip_for(out, "ep93", res[1])
+    assert picked == ["shot1", "extra", "shot2"]
+    excluded = "\n".join(str(p) for p in [eps / "x" / "ep93" / "shot10" / "shot10.mp4",
+                                          eps / "x" / "ep94" / "shot1" / "shot1.mp4"])
+    res, B = run(batch, monkeypatch, text, output_folder=str(out), excluded=excluded)
+    assert res[1] == "shot2" and res[5] == str(out / "ep94")                # shot10 and ep94/shot1 left out
+    zip_for(out, "ep94", "shot2")
+    res, B = run(batch, monkeypatch, text, output_folder=str(out), excluded=excluded)
+    assert all(isinstance(o, B) for o in res)                                # nothing left: blocked, no error
+
+
+def test_failed_video_is_retried_once_then_passed_over(batch, monkeypatch, eps, tmp_path, capsys):
+    out = tmp_path / "out"
+    text = str(eps / "x" / "ep94")
+    names = [run(batch, monkeypatch, text, output_folder=str(out))[0][1] for _ in range(3)]
+    assert names == ["shot1", "shot1", "shot2"]                              # still no zip after 2 tries: passed over
+    assert "failed twice" in capsys.readouterr().out
+    zip_for(out, "ep94", "shot2")
+    res, B = run(batch, monkeypatch, text, output_folder=str(out))
+    assert all(isinstance(o, B) for o in res)                                # only the broken one is left
+    batch.reset_attempts()                                                   # Clear / ComfyUI restart
+    assert run(batch, monkeypatch, text, output_folder=str(out))[0][1] == "shot1"
+
+
+def test_excluded_keys(batch, tmp_path):
+    a = str(tmp_path / "A" / "x.mp4")
+    # same file on Windows (case-insensitive), two files on Linux / macOS
+    assert batch.excluded_keys("%s\n\n  %s  \n" % (a, a.upper())) == {os.path.normcase(a), os.path.normcase(a.upper())}
+    assert batch.excluded_keys("") == set()
