@@ -3,6 +3,17 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.4] - 2026-10-27
+### Changed
+- **Load Video Batch (Folders)**: with `skip_if_zip_exists` on (the default), every run now takes **the next video that has no zip yet**, whatever `index` says. Cancelled queues, restarts or a queue that ran ahead can no longer skip videos (a 372-video batch had skipped 84). A video whose run left no zip is tried once more; after a second try it is passed over (until ComfyUI restarts or Clear), so one broken video cannot use up the queue. Every decision is logged as `[LoadVideoBatchFolders] …` in ComfyUI's console. `index` is only used with `skip_if_zip_exists` off (to redo a video).
+### Added
+- ✕ on every preview tile leaves that video out of the batch (greyed, **↺ undo** puts it back), saved with the workflow. The bar counts what is left to do.
+- Browser console lines `[RotoTools] …` for drops, scans, Clear and runs.
+### Fixed
+- After **Clear**, dropping a video that was in the earlier list did nothing (the preview still remembered the old list) until the page was reloaded.
+- **Clear** now empties everything: the list, the left-out videos, the "Last run" line, `index` and the failed-video memory.
+- The preview asks for its scan with a POST, so very long lists always fit.
+
 ## [0.3.3] - 2026-10-23
 ### Fixed
 - **Load Video Batch (Folders)**: `index` now goes back to 0 when the list of folders / videos changes, and when it is past the last video. Before, it kept counting from the previous batch, so a new list ran as "index 9 is past the last video" and nothing was processed. Works with both "control after generate" and "control before generate".

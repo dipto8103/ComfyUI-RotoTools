@@ -2,7 +2,7 @@
 # The registry name is permanent once published. The Comfy Registry does not allow "ComfyUI" in it.
 name = "rototools"
 description = "Roto / alpha-matte helper nodes for ComfyUI: save an RGBA image sequence as one TGA zip named after the source video, batch-load a folder of folders of videos, and a spec readout (size / frames / fps)."
-version = "0.3.3"
+version = "0.3.4"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"

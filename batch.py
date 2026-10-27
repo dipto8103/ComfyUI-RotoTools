@@ -290,16 +290,22 @@ class LoadVideoBatchFolders:
                                                        "Copy as path (Ctrl+Shift+C). Every video inside the folders and "
                                                        "their sub-folders is found automatically."}),
                 "index": ("INT", {"default": 0, "min": 0, "max": 999999, "control_after_generate": "increment",
-                                  "tooltip": "Which video to load (0 = first). Leave this on 'increment' and set Run's "
-                                             "batch count to the number of videos: they are queued one after another."}),
+                                  "tooltip": "Only used when skip_if_zip_exists is off: which video to load (0 = first). "
+                                             "With skip_if_zip_exists on (default), every run simply takes the next video "
+                                             "that has no zip yet."}),
                 "skip_if_zip_exists": ("BOOLEAN", {"default": True,
-                                                   "tooltip": "Resume support: if the video's zip is already in its output "
-                                                              "folder, this video is skipped (the rest of the workflow does not run)."}),
+                                                   "tooltip": "On (default): every run takes the next video that has no zip "
+                                                              "yet; done and excluded videos are passed over. "
+                                                              "Off: the video at 'index' is processed even if its zip exists."}),
                 "output_folder": ("STRING", {"default": "", "tooltip": "Where everything is saved. A folder named after each "
                                                                        "input folder is made inside it (output\\ep93\\shot5.zip). "
                                                                        "Connect zip_folder to the TGA saver's output_folder."}),
                 "extensions": ("STRING", {"default": DEFAULT_EXTS, "tooltip": "Comma separated video extensions."}),
                 "recursive": ("BOOLEAN", {"default": True, "tooltip": "Look inside sub-folders of sub-folders too."}),
+            },
+            "optional": {
+                # filled by the preview's x / undo buttons and saved with the workflow; hidden on the node
+                "excluded": ("STRING", {"default": "", "tooltip": "Videos left out of the batch, one path per line."}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -314,15 +320,11 @@ class LoadVideoBatchFolders:
     DESCRIPTION = "Loads one video per run from one or more folders of folders, for queueing hundreds of clips in one go."
 
     @classmethod
-    def IS_CHANGED(cls, batch_folder, index, **kw):
-        try:
-            _, items, _ = scan_batch(batch_folder, kw.get("extensions", DEFAULT_EXTS), kw.get("recursive", True))
-            p = items[index]["path"] if index < len(items) else ""
-            return "%s|%d|%s|%s|%s" % (len(items), index, p, os.path.getmtime(p) if p else "", kw.get("output_folder"))
-        except Exception:
-            return float("nan")
+    def IS_CHANGED(cls, **kw):
+        return float("nan")   # which video comes next depends on the zips on disk, so always run
 
-    def load(self, batch_folder, index, skip_if_zip_exists, output_folder, extensions, recursive, unique_id=None):
+    def load(self, batch_folder, index, skip_if_zip_exists, output_folder, extensions, recursive, excluded="",
+             unique_id=None):
         groups, items, _ = scan_batch(batch_folder, extensions, recursive, output_folder=output_folder)
         _remember(items)
         total = len(items)
@@ -331,17 +333,28 @@ class LoadVideoBatchFolders:
                 raise ValueError("The batch list is empty: add folders or drop videos onto the Load Video Batch node.")
             raise ValueError("No videos (%s) found under %s" % (extensions, ", ".join(split_folders(batch_folder))))
         blocker = _blocker()
+        out_of = excluded_keys(excluded)
 
         # the status goes to the node's preview bar (ui message), not ComfyUI's large progress-text box
-        def skip(msg):
-            print("[LoadVideoBatchFolders] " + msg)
+        def skip(msg, k=index):
+            log(msg)
             if blocker is None:
                 raise RuntimeError(msg)
             b = blocker(None)
-            return {"ui": {"rototools_index": [index], "rototools_status": [msg]}, "result": (b, b, b, b, b, b)}
+            return {"ui": {"rototools_index": [k], "rototools_status": [msg]}, "result": (b, b, b, b, b, b)}
 
-        if index >= total:
-            return skip("index %d is past the last video (%d videos). Nothing to do." % (index, total))
+        if skip_if_zip_exists:
+            k, counts = next_without_zip(groups, items, output_folder, out_of)
+            if k is None:
+                return skip("nothing left to do: all %d videos are done or left out (%s)" % (total, counts["text"]),
+                            total)
+        else:   # index mode: the video at `index`, even if its zip exists (to redo it)
+            k, counts = index, None
+            if k >= total:
+                return skip("index %d is past the last video (%d videos). Nothing to do." % (k, total))
+            if os.path.normcase(items[k]["path"]) in out_of:
+                return skip("%d/%d is excluded: %s" % (k + 1, total, items[k]["rel"]))
+        index = k
         it = items[index]
         group = groups[it["group"]]
         label = group["label"]
@@ -351,12 +364,67 @@ class LoadVideoBatchFolders:
         else:
             claim_single(zfolder, it["name"], it["path"])  # and this zip name to this video
         where = label or "single video"
-        if skip_if_zip_exists and os.path.exists(os.path.join(zfolder, it["name"] + ".zip")):
-            return skip("%d/%d SKIPPED (zip already exists): %s \\ %s" % (index + 1, total, where, it["name"]))
         msg = "%d / %d   %s \\ %s" % (index + 1, total, where, it["rel"])
-        print("[LoadVideoBatchFolders] " + msg)
+        log("run: %s   (%s)" % (msg, "next without a zip: " + counts["text"] if counts else "index mode"))
         return {"ui": {"rototools_index": [index], "rototools_status": [msg]},
                 "result": (_make_video(it["path"]), it["name"], it["path"], index, total, zfolder)}
+
+
+# ---------------------------------------------------------------- picking the next video
+# Each run takes the first video that has no zip yet. A video that was started but still has no zip when the
+# next run comes (that run failed or was cancelled) is tried once more; after a second try it is passed over
+# until ComfyUI restarts or the list is cleared, so one broken video cannot use up the whole queue.
+_STARTS = {}          # normcase'd path -> times this video was started in this session
+_SKIP_LOGGED = set()  # broken videos already reported in the log
+
+
+def log(msg):
+    print("[LoadVideoBatchFolders] " + msg)
+
+
+def excluded_keys(text):
+    return {os.path.normcase(_abs(line)) for line in (text or "").splitlines() if line.strip()}
+
+
+def reset_attempts():
+    _STARTS.clear()
+    _SKIP_LOGGED.clear()
+
+
+def next_without_zip(groups, items, output_folder, out_of=()):
+    """(index of the next video to process or None, counts). Records that the chosen video was started."""
+    done = excl = broken = left = 0
+    pick = None
+    folders = {}
+    for k, it in enumerate(items):
+        key = os.path.normcase(it["path"])
+        if key in out_of:
+            excl += 1
+            continue
+        g = it["group"]
+        if g not in folders:
+            folders[g] = zip_folder_for(output_folder, groups[g]["label"])
+        if os.path.exists(os.path.join(folders[g], it["name"] + ".zip")):
+            done += 1
+            _STARTS.pop(key, None)
+            continue
+        if _STARTS.get(key, 0) >= 2:
+            broken += 1
+            if key not in _SKIP_LOGGED:
+                _SKIP_LOGGED.add(key)
+                log("%s failed twice (still no zip): passing over it. It is tried again after a ComfyUI restart "
+                    "or Clear on the node." % it["path"])
+            continue
+        left += 1
+        if pick is None:
+            pick = k
+    text = "%d left, %d done, %d excluded%s" % (left, done, excl, ", %d failed twice" % broken if broken else "")
+    if pick is not None:
+        key = os.path.normcase(items[pick]["path"])
+        if _STARTS.get(key):
+            log("retrying %s: the previous run of it left no zip (failed or cancelled)" % items[pick]["path"])
+        _STARTS[key] = _STARTS.get(key, 0) + 1
+    return pick, {"done": done, "excluded": excl, "broken": broken, "left": left, "text": text}
 
 
 
@@ -506,12 +574,24 @@ def _register_routes():
         return  # not inside ComfyUI (tests)
 
     @routes.get("/rototools/batch/scan")
+    @routes.post("/rototools/batch/scan")   # POST: the list goes in the body, so any number of videos fits
     async def _scan(request):
-        q = request.rel_url.query
+        q = dict(request.rel_url.query)
+        if request.method == "POST":
+            try:
+                q.update(await request.json())
+            except Exception:
+                pass
         rep = await asyncio.get_running_loop().run_in_executor(
-            None, scan_report, q.get("folders", ""), q.get("extensions", DEFAULT_EXTS),
-            q.get("recursive", "1") not in ("0", "false"), q.get("output_folder", ""))
+            None, scan_report, q.get("folders", ""), q.get("extensions") or DEFAULT_EXTS,
+            str(q.get("recursive", "1")).lower() not in ("0", "false"), q.get("output_folder", ""))
         return web.json_response(rep)
+
+    @routes.post("/rototools/batch/reset")
+    async def _reset(request):
+        reset_attempts()
+        log("list cleared: failed-video memory reset")
+        return web.json_response({"ok": True})
 
     @routes.get("/rototools/batch/thumb")
     async def _thumb(request):
