@@ -365,5 +365,6 @@ def test_failed_video_is_retried_once_then_passed_over(batch, monkeypatch, eps, 
 
 def test_excluded_keys(batch, tmp_path):
     a = str(tmp_path / "A" / "x.mp4")
-    assert batch.excluded_keys("%s\n\n  %s  \n" % (a, a.upper())) == {os.path.normcase(a)}
+    # same file on Windows (case-insensitive), two files on Linux / macOS
+    assert batch.excluded_keys("%s\n\n  %s  \n" % (a, a.upper())) == {os.path.normcase(a), os.path.normcase(a.upper())}
     assert batch.excluded_keys("") == set()
