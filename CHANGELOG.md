@@ -3,6 +3,12 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.3.6] - 2026-10-29
+### Changed
+- **Load Video Batch (Folders)** preview: the ✕ that leaves a shot out is a large round button in the middle of the tile (on hover), easier to hit.
+- The **Refresh** button is gone; the preview re-reads the folders by itself when the list changes, after every run, and when you come back to the ComfyUI tab (e.g. after adding shots in Explorer). Only **Clear** is left.
+- The "… to do: set Run batch count to …" line wraps onto a second line instead of being cut off.
+
 ## [0.3.5] - 2026-10-27
 ### Changed
 - **Load Video Batch (Folders)**: each preview tile shows the shot name with its **duration and frame count** (`55 · 2.96 s · 74 frames`) instead of the list number and the name (which looked doubled when shots are named by number). The list number is in the tile's tooltip. Read from the video header only, once the tile is on screen.
