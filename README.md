@@ -59,15 +59,16 @@ x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
 
 **Preview grid**: the node shows a thumbnail of every detected video, grouped per input folder (with its full path and output folder). Hover a tile to play it, click it for a full view in the node (✕ to go back to the grid). Resize the node or use the slider to change the tile size. ✓ = zip already exists; the yellow frame is the video of the last run. Videos the browser cannot play (some .mov/.mkv/.avi codecs) still get a thumbnail.
 
-Outputs: `video`, `zip_name`, `video_path`, `index`, `total`, `zip_folder`.
+Outputs: `video`, `zip_name`, `video_path`, `index`, `total`, `zip_folder`, `shot_label` (where the shot comes from + its zip name, e.g. `ep93 / shot6` or `single / shot6`: unique even for same-named shots; connect it to Roto Review's `name`).
 
 ### Roto Review (A/B)  — `image/video`
-A **preview-only** review player for checking roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT). Connect the **original frames to `images_a`** and the **RGBA roto frames to `images_b`** (optionally `zip_name` to `name`). Nothing is written to ComfyUI's output folder: preview frames live in the temp folder.
+A **preview-only** review player for checking roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT). Connect the **original frames to `images_a`** and the **RGBA roto frames to `images_b`** (optionally Load Video Batch's `shot_label` to `name`, so same-named shots from different folders stay apart in the history and downloads). Nothing is written to ComfyUI's output folder: preview frames live in the temp folder.
 
 - Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
 - **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
 - **Light preview by default** (¼ resolution, low jpeg/webp quality): it is only for looking; the **TGA zip is the full-quality master**. Raise `Playback resolution` / `quality` on the node if you want a sharper preview.
-- **History**: every shot reviewed in this ComfyUI session as a strip of thumbnails with a count; click one to review it again. Only if the drive gets low (under 10 GB free) are the oldest dropped. ComfyUI empties the temp folder on restart, so the strip starts fresh then.
+- **Layout**: the video fits exactly at the node's width (no black bars); the rest of the node's height is the history. The node keeps the size you give it.
+- **History**: every shot reviewed in this ComfyUI session as a grid of thumbnails with a count (scrolls when full); click one to review it again. Only if the drive gets low (under 10 GB free) are the oldest dropped. ComfyUI empties the temp folder on restart, so the strip starts fresh then.
 - **⤓ Alpha matte**: downloads the shot's matte (white = subject on black, mp4) at **full resolution**, made from lossless full-size alpha frames, whatever the preview settings. Saved by your browser; nothing goes to ComfyUI's output folder. The background colour is only for viewing in the player.
 
 ## Install

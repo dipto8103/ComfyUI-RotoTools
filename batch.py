@@ -310,11 +310,13 @@ class LoadVideoBatchFolders:
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
-    RETURN_TYPES = ("VIDEO", "STRING", "STRING", "INT", "INT", "STRING")
-    RETURN_NAMES = ("video", "zip_name", "video_path", "index", "total", "zip_folder")
+    RETURN_TYPES = ("VIDEO", "STRING", "STRING", "INT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("video", "zip_name", "video_path", "index", "total", "zip_folder", "shot_label")
     OUTPUT_TOOLTIPS = ("The video for this run.", "Video file name without extension (shot5).",
                        "Full path of the video.", "Index of this video (0 = first).", "Number of videos found.",
-                       "Output folder for this video's input folder (output\\ep93). Connect to the saver's output_folder.")
+                       "Output folder for this video's input folder (output\\ep93). Connect to the saver's output_folder.",
+                       "Where the shot comes from + its zip name, unique in the batch: 'ep93 / shot6', "
+                       "'ep93 (y) / shot6', 'single / shot6'. Connect to Roto Review's name.")
     FUNCTION = "load"
     CATEGORY = "image/video"
     DESCRIPTION = "Loads one video per run from one or more folders of folders, for queueing hundreds of clips in one go."
@@ -341,7 +343,7 @@ class LoadVideoBatchFolders:
             if blocker is None:
                 raise RuntimeError(msg)
             b = blocker(None)
-            return {"ui": {"rototools_index": [k], "rototools_status": [msg]}, "result": (b, b, b, b, b, b)}
+            return {"ui": {"rototools_index": [k], "rototools_status": [msg]}, "result": (b,) * 7}
 
         if skip_if_zip_exists:
             k, counts = next_without_zip(groups, items, output_folder, out_of)
@@ -366,8 +368,9 @@ class LoadVideoBatchFolders:
         where = label or "single video"
         msg = "%d / %d   %s \\ %s" % (index + 1, total, where, it["rel"])
         log("run: %s   (%s)" % (msg, "next without a zip: " + counts["text"] if counts else "index mode"))
+        shot_label = "%s / %s" % (label or "single", it["name"])   # unique: labels and names are made unique
         return {"ui": {"rototools_index": [index], "rototools_status": [msg]},
-                "result": (_make_video(it["path"]), it["name"], it["path"], index, total, zfolder)}
+                "result": (_make_video(it["path"]), it["name"], it["path"], index, total, zfolder, shot_label)}
 
 
 # ---------------------------------------------------------------- picking the next video

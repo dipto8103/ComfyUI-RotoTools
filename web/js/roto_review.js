@@ -11,19 +11,21 @@ import { VideoReviewPlayer } from "./roto_review_player.js";
 
 const CONTROLS_H = 40;
 const INFO_HEADER_H = 26; // collapsed info section (header only)
-const ROTO_ROWS_H = 32 + 70; // RotoTools: roto/download row + history strip
+const ROTO_ROWS_H = 32 + 90; // RotoTools: roto/download row + one row of the history grid
 const MIN_WIDTH = 320;
 
 // Resize the node so the viewport matches the loaded footage aspect while
 // keeping the user's chosen width.
+// RotoTools: the player itself now fits the video snugly and gives the rest of the height to the history,
+// so the node keeps the size you gave it; it only grows when it is too small for the video + one history row.
 function fitNodeToAspect(node, player) {
   const widget = node.widgets?.find((w) => w.name === "vr_player");
   const topY = widget?.y || 142; // y of the player widget inside the node
   const width = Math.max(node.size[0], MIN_WIDTH);
-  node.setSize([
-    width,
-    topY + Math.round(width * player.aspect) + CONTROLS_H + INFO_HEADER_H + ROTO_ROWS_H + 8,
-  ]);
+  const needed = topY + Math.round(width * player.aspect) + CONTROLS_H + INFO_HEADER_H + ROTO_ROWS_H + 8;
+  if (width !== node.size[0] || node.size[1] < needed) {
+    node.setSize([width, Math.max(node.size[1], needed)]);
+  }
   app.graph.setDirtyCanvas(true, true);
 }
 

@@ -12,6 +12,7 @@
 #     folder (the TGA zip is the full-quality master)
 import os
 import random
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
@@ -94,7 +95,8 @@ class RotoReview:
                                         {"default": cls.DEFAULT_PLAYBACK_RES,
                                          "tooltip": "Scale the preview frames relative to the source. Lower = faster load and less memory."}),
                 "name": ("STRING", {"forceInput": True,
-                                    "tooltip": "Shot name for the history strip and downloads (e.g. zip_name from Load Video Batch)."}),
+                                    "tooltip": "Shot name for the history and the download (connect shot_label from "
+                                               "Load Video Batch: 'ep93 / shot6', unique even for same-named shots)."}),
             },
         }
 
@@ -143,7 +145,10 @@ class RotoReview:
             "b_prev": [prev_dim(images_b)] if images_b is not None else [],
             # RotoTools additions
             "run_id": [run_id],
-            "name": [_clean_name(name) or "shot_" + run_id],
+            # shown in the history as is (e.g. "ep93 / shot6" from Load Video Batch's shot_label) ...
+            "name": [" ".join(str(name).split()) if name and str(name).strip() else "shot_" + run_id],
+            # ... and file-safe for the download name ("ep93_shot6")
+            "file": [_clean_name(re.sub(r"\s*[\\/]+\s*", "_", str(name or "").strip())) or "shot_" + run_id],
             "b_alpha": [bool(b_alpha)],
             "m_frames": m_frames,
         }
@@ -307,7 +312,7 @@ def make_download(run_id, kind="alpha"):
                 os.remove(p)
         except OSError:
             pass
-    name = "%s_alpha.mp4" % ui["name"][0]
+    name = "%s_alpha.mp4" % (ui.get("file") or ui["name"])[0]
     path = os.path.join(folder, "%s_%s" % (run_id, name))
     first = Image.open(_frame_path(ui["m_frames"][0]))
     w, h = first.size

@@ -3,6 +3,13 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.4.1] - 2026-10-29
+### Added
+- **Load Video Batch (Folders)**: new last output `shot_label`, where the shot comes from + its zip name (`ep93 / shot6`, `ep93 (y) / shot6`, `single / shot6`), unique even when shots in different folders (or a dropped video) have the same name. Existing connections are unchanged.
+### Changed
+- **Roto Review (A/B)**: connect `shot_label` to `name` and the history shows `ep93 / shot6` instead of three identical `shot6`; downloads get matching names (`ep93_shot6_alpha.mp4`).
+- **Roto Review (A/B)** layout: the video area fits the video exactly at the node's width (no black bars) and the history becomes a multi-row grid that fills the rest of the node, with a scroll bar when full. The node keeps the size you give it (it only grows when it is too small for the video and one row of history).
+
 ## [0.4.0] - 2026-10-29
 ### Added
 - **Roto Review (A/B)** (`image/video`): a preview-only review player for roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT; notice kept in the copied files and in `LICENSE-KM-VideoReview`). All of the original player is kept (wipe H/V, side by side, difference, A/B flip, frame-accurate transport, loop/bounce, fullscreen, exposure/gamma, info). Added on top:

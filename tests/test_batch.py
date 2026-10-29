@@ -197,7 +197,7 @@ def test_load_single_video_saves_into_output_folder(batch, nodes_mod, make_frame
     out = tmp_path / "out"
     text = "%s\n%s" % (loose / "misc" / "clip_a.mp4", eps / "x" / "ep94")
     for i in (0, 1):
-        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out))
+        (video, name, path, idx, total, zfolder, label), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out))
         nodes_mod.SaveImageSequenceTGA().save(
             images=make_frames(1), output_folder=zfolder, filename_prefix="frame", start_number=0, digits=5,
             rle_compression=True, overwrite=False, preview_frames=0, save_as_zip=True,
@@ -265,7 +265,7 @@ def test_load_each_index(batch, monkeypatch, eps, tmp_path):
     groups, items, _ = batch.scan_batch(text)
     out_root = tmp_path / "out"
     for i, it in enumerate(items):
-        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
+        (video, name, path, idx, total, zfolder, label), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
                                                           skip_if_zip_exists=False)
         assert video == ("VIDEO", it["path"]) and path == it["path"] and idx == i and total == len(items)
         assert name == it["name"]
@@ -274,7 +274,7 @@ def test_load_each_index(batch, monkeypatch, eps, tmp_path):
 
 def test_index_past_end_is_blocked_not_error(batch, monkeypatch, tree):
     out, B = run(batch, monkeypatch, tree, index=99, skip_if_zip_exists=False)
-    assert len(out) == 6 and all(isinstance(o, B) for o in out)
+    assert len(out) == 7 and all(isinstance(o, B) for o in out)
 
 
 def test_skip_if_zip_exists_per_folder(batch, monkeypatch, eps, tmp_path):
@@ -316,7 +316,7 @@ def test_saver_writes_into_episode_folder(batch, nodes_mod, make_frames, monkeyp
     text = "%s, %s" % (eps / "x" / "ep93", eps / "x" / "ep94")
     out_root = tmp_path / "out"
     for i in (0, 4):   # ep93/shot1 and ep94/shot1: same video name, different episodes
-        (video, name, path, idx, total, zfolder), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
+        (video, name, path, idx, total, zfolder, label), _ = run(batch, monkeypatch, text, index=i, output_folder=str(out_root),
                                                           skip_if_zip_exists=False)
         nodes_mod.SaveImageSequenceTGA().save(
             images=make_frames(1), output_folder=zfolder, filename_prefix="frame", start_number=0, digits=5,
@@ -325,6 +325,19 @@ def test_saver_writes_into_episode_folder(batch, nodes_mod, make_frames, monkeyp
     assert sorted(os.listdir(out_root)) == ["ep93", "ep94"]
     for ep in ("ep93", "ep94"):
         assert sorted(os.listdir(out_root / ep)) == [batch.SOURCE_MARK, "shot1.zip"]
+
+
+def test_shot_label_is_unique_for_same_named_shots(batch, monkeypatch, tmp_path):
+    make(tmp_path / "a" / "folderA", ["shot6/shot6.mp4"])
+    make(tmp_path / "b" / "folderB", ["shot6/shot6.mp4"])
+    make(tmp_path / "c" / "folderA", ["shot6/shot6.mp4"])     # a second input folder named folderA
+    make(tmp_path / "loose", ["shot6.mp4"])
+    text = "\n".join(str(p) for p in [tmp_path / "a" / "folderA", tmp_path / "b" / "folderB",
+                                      tmp_path / "c" / "folderA", tmp_path / "loose" / "shot6.mp4"])
+    out = tmp_path / "out"
+    labels = [run(batch, monkeypatch, text, index=i, output_folder=str(out), skip_if_zip_exists=False)[0][6]
+              for i in range(4)]
+    assert labels == ["folderA / shot6", "folderB / shot6", "folderA (c) / shot6", "single / shot6"]
 
 
 def zip_for(out, ep, name):
