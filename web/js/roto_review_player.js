@@ -3,8 +3,8 @@
 // MIT License, Copyright (c) 2026 Kasun Malinda (full text in LICENSE-KM-VideoReview).
 // Everything of the original player is kept. RotoTools adds (marked "RotoTools" below):
 //   * B = RGBA roto: show it over a background colour (or checkerboard), as the alpha matte, or as is
-//   * a download row (roto with alpha as ProRes 4444 .mov, alpha matte as mp4)
-//   * a history strip of the shots reviewed in this session; click one to review it again
+//   * a download button for the alpha matte (white on black mp4) at full resolution
+//   * a history strip of every shot reviewed in this session (with a count); click one to review it again
 //
 // VideoReviewPlayer — RV-style A/B frame-sequence review player.
 // Side-effect-free module: only exports the class (ComfyUI auto-imports every
@@ -22,10 +22,6 @@ const BACKGROUNDS = [
   ["#ff0000", "Red"], ["#00b140", "Green"], ["#0047bb", "Blue"],
   ["#000000", "Black"], ["#ffffff", "White"], ["#808080", "Grey"], ["checker", "Checker"],
 ];
-const DOWNLOAD_KINDS = [
-  ["roto_alpha", "Roto with alpha (ProRes 4444 .mov)"],
-  ["alpha", "Alpha matte (mp4)"],
-];
 const RR_STYLE_ID = "rr-player-style";
 const RR_CSS = `
 .rr-bar { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; padding:4px 6px; background:#1c1c1c;
@@ -39,6 +35,8 @@ const RR_CSS = `
 .rr-hist { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:4px 6px; background:#151515;
   border-top:1px solid #2a2a2a; flex:0 0 auto; min-height:58px; }
 .rr-hist .rr-empty { color:#666; font-size:11px; align-self:center; }
+.rr-hist .rr-count { flex:0 0 auto; align-self:center; color:#9cf; font-size:11px; writing-mode:vertical-rl;
+  transform:rotate(180deg); white-space:nowrap; }
 .rr-h { flex:0 0 auto; width:84px; cursor:pointer; border:2px solid transparent; border-radius:3px;
   background:#000; position:relative; }
 .rr-h:hover { border-color:#58f; }
@@ -465,15 +463,15 @@ export class VideoReviewPlayer {
         this.s.bg = v;
         this.#refreshB();
       });
-    this.rrDlSel = rrSelect("What to download", DOWNLOAD_KINDS, "roto_alpha", () => {});
     this.rrDlBtn = document.createElement("button");
-    this.rrDlBtn.textContent = "⤓ Download";
-    this.rrDlBtn.title = "Makes the video now and saves it to your browser's Downloads folder (nothing is kept in ComfyUI)";
+    this.rrDlBtn.textContent = "⤓ Alpha matte";
+    this.rrDlBtn.title = "Download this shot's alpha matte (white = subject on black, mp4) at full resolution, " +
+      "whatever the preview settings. Saved to your browser's Downloads folder; nothing is kept in ComfyUI.";
     this.rrDlBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.#download();
     });
-    rr.append(this.rrName, this.rrViewLab, this.rrViewSel, this.rrBgLab, this.rrBgSel, this.rrDlSel, this.rrDlBtn);
+    rr.append(this.rrName, this.rrViewLab, this.rrViewSel, this.rrBgLab, this.rrBgSel, this.rrDlBtn);
     const hist = (this.rrHist = document.createElement("div"));
     hist.className = "rr-hist";
     hist.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -639,20 +637,17 @@ export class VideoReviewPlayer {
     for (const el of [this.rrBgLab, this.rrBgSel]) el.style.display = bgShown ? "" : "none";
     this.rrName.textContent = this.s.name || "";
     this.rrName.title = this.s.name || "";
-    // both downloads are made from the roto (B); without it there is nothing to download
-    const hasB = this.s.b.length > 0;
-    this.rrDlSel.disabled = !hasB;
-    this.rrDlBtn.disabled = !this.s.runId || !hasB;
+    // the matte comes from the roto's alpha; without an RGBA B there is nothing to download
+    this.rrDlBtn.disabled = !this.s.runId || !roto;
   }
 
   async #download() {
     if (!this.s.runId) return;
-    const kind = this.rrDlSel.value;
-    const url = this.api.apiURL(`/rototools/review/download?run=${encodeURIComponent(this.s.runId)}` +
-      `&kind=${encodeURIComponent(kind)}`);
+    const kind = "alpha";
+    const url = this.api.apiURL(`/rototools/review/download?run=${encodeURIComponent(this.s.runId)}&kind=${kind}`);
     const label = this.rrDlBtn.textContent;
     this.rrDlBtn.disabled = true;
-    this.rrDlBtn.textContent = "Making the video…";
+    this.rrDlBtn.textContent = "Making the matte…";
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
@@ -684,6 +679,11 @@ export class VideoReviewPlayer {
       hist.innerHTML = '<span class="rr-empty">Shots reviewed in this session will appear here.</span>';
       return;
     }
+    const count = document.createElement("span");
+    count.className = "rr-count";
+    count.textContent = `${runs.length} shot${runs.length === 1 ? "" : "s"}`;
+    count.title = "Shots reviewed in this ComfyUI session (newest first)";
+    hist.appendChild(count);
     for (const run of runs) {
       const f = run.a_frames[0];
       const h = document.createElement("div");

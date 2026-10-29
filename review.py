@@ -6,9 +6,10 @@
 # Everything of the original node is kept; RotoTools adds on top:
 #   * an RGBA B input (the roto) is kept with its alpha (WebP), so the player can show it over any
 #     background colour or as the alpha matte
-#   * a history of the shots reviewed in this ComfyUI session (the last HISTORY_SIZE), older frames deleted
-#   * downloads made on request (roto with alpha as ProRes 4444 .mov, alpha matte as mp4) - nothing is saved
-#     to the output folder
+#   * a history of every shot reviewed in this ComfyUI session (lightest preview by default; the oldest are only
+#     dropped when the drive runs low)
+#   * the alpha matte (white on black) downloaded on request at full resolution - nothing is saved to the output
+#     folder (the TGA zip is the full-quality master)
 import os
 import random
 import time
@@ -39,8 +40,8 @@ class RotoReview:
     OUTPUT_NODE = True
     DESCRIPTION = ("A/B review player (wipe, side by side, difference, flip) for roto work: A = original, "
                    "B = RGBA roto, shown over any background or as the alpha matte. Keeps a history of the "
-                   "shots of this session and downloads the roto with alpha (ProRes 4444 .mov) or the alpha "
-                   "matte (mp4) on request. Preview only: nothing is "
+                   "shots of this session and downloads the alpha matte at full resolution on request. "
+                   "Preview only: nothing is "
                    "saved to the output folder.")
 
     # Make the node discoverable under the terms people actually search for.
@@ -67,7 +68,10 @@ class RotoReview:
         "0.5": 0.5,
         "1:1": 1.0,
     }
-    DEFAULT_PLAYBACK_RES = "1:1"
+    # RotoTools: the lightest preview by default (only for looking; the zip is the full-quality master and the
+    # alpha matte download is made from full-resolution alpha frames, whatever the preview settings).
+    DEFAULT_PLAYBACK_RES = "0.25"
+    DEFAULT_QUALITY = 50
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -84,7 +88,7 @@ class RotoReview:
                 "preview_format": (list(cls.PREVIEW_FORMATS.keys()),
                                    {"default": cls.DEFAULT_PREVIEW_FORMAT,
                                     "tooltip": "How preview frames are encoded for the browser. jpeg is fastest to load; webp lossless is pixel-exact but slowest. An RGBA B is always webp (jpeg has no alpha)."}),
-                "quality": ("INT", {"default": 90, "min": 1, "max": 100,
+                "quality": ("INT", {"default": cls.DEFAULT_QUALITY, "min": 1, "max": 100,
                                     "tooltip": "Encode quality for jpeg / webp. Ignored for webp lossless."}),
                 "Playback resolution": (list(cls.PLAYBACK_RES.keys()),
                                         {"default": cls.DEFAULT_PLAYBACK_RES,
@@ -95,10 +99,10 @@ class RotoReview:
         }
 
     def review(self, images_a, images_b=None, preview_format=None,
-               quality=90, name=None, **kwargs):
+               quality=DEFAULT_QUALITY, name=None, **kwargs):
         fps = float(kwargs.get("Base fps", 24.0))
         fmt = self.PREVIEW_FORMATS.get(preview_format, "jpeg")
-        scale = self.PLAYBACK_RES.get(kwargs.get("Playback resolution", "1:1"), 1.0)
+        scale = self.PLAYBACK_RES.get(kwargs.get("Playback resolution", self.DEFAULT_PLAYBACK_RES), 1.0)
         # Fresh id per execution so re-runs never overwrite files the browser
         # may still be fetching from a previous run.
         run_id = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=6))
@@ -118,6 +122,9 @@ class RotoReview:
             if images_b is not None:
                 b_frames = self._save_batch(images_b, f"vr_{run_id}_b", b_fmt,
                                             quality, scale, ex, workers, pbar)
+            # RotoTools: the alpha at full resolution, lossless (grey PNG, small: mattes are mostly flat),
+            # so the matte download is exact whatever the preview settings are
+            m_frames = self._save_alpha(images_b, f"vr_{run_id}_m", ex) if b_alpha else []
 
         def prev_dim(images):
             w, h = int(images.shape[2]), int(images.shape[1])
@@ -138,9 +145,29 @@ class RotoReview:
             "run_id": [run_id],
             "name": [_clean_name(name) or "shot_" + run_id],
             "b_alpha": [bool(b_alpha)],
+            "m_frames": m_frames,
         }
         remember_run(ui)
         return {"ui": ui}
+
+    # RotoTools
+    def _save_alpha(self, images, prefix, ex):
+        folder = folder_paths.get_temp_directory()
+        os.makedirs(folder, exist_ok=True)
+
+        def save(arr, path):
+            Image.fromarray((np.clip(arr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8), "L").save(
+                path, format="PNG", compress_level=1)
+
+        results, futures = [], []
+        for i in range(int(images.shape[0])):
+            arr = images[i].cpu().numpy()[..., 3].astype(np.float32, copy=False)
+            file = f"{prefix}_{i:05}_.png"
+            results.append({"filename": file, "subfolder": "", "type": "temp"})
+            futures.append(ex.submit(save, arr, os.path.join(folder, file)))
+        for f in futures:
+            f.result()
+        return results
 
     def _save_batch(self, images, prefix, fmt, quality, scale, ex, workers, pbar=None):
         output_dir = folder_paths.get_temp_directory()
@@ -199,9 +226,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {"RotoReview": "Roto Review (A/B)"}
 
 
 # ---------------------------------------------------------------- RotoTools: history
-# The runs of this ComfyUI session, newest last. Only the last HISTORY_SIZE keep their preview frames;
-# older ones are deleted from the temp folder so a 300-shot batch does not fill the disk.
-HISTORY_SIZE = 40
+# Every run of this ComfyUI session, newest last. The previews are small (lowest settings by default), so all of
+# them are kept; only if the drive of the temp folder gets low (MIN_FREE_GB) are the oldest runs dropped.
+MIN_FREE_GB = 10
 _HISTORY = []
 
 
@@ -216,15 +243,29 @@ def _frame_path(f):
     return os.path.join(folder_paths.get_temp_directory(), f.get("subfolder") or "", f["filename"])
 
 
+def _free_gb():
+    import shutil
+    try:
+        return shutil.disk_usage(folder_paths.get_temp_directory()).free / 1024 ** 3
+    except OSError:
+        return float("inf")
+
+
+def _forget(run):
+    for f in run["ui"]["a_frames"] + run["ui"]["b_frames"] + run["ui"].get("m_frames", []):
+        try:
+            os.remove(_frame_path(f))
+        except OSError:
+            pass
+
+
 def remember_run(ui):
     _HISTORY.append({"ui": ui, "time": time.time()})
-    while len(_HISTORY) > HISTORY_SIZE:
+    while len(_HISTORY) > 1 and _free_gb() < MIN_FREE_GB:
         old = _HISTORY.pop(0)
-        for f in old["ui"]["a_frames"] + old["ui"]["b_frames"]:
-            try:
-                os.remove(_frame_path(f))
-            except OSError:
-                pass
+        _forget(old)
+        print("[RotoReview] drive low on space (< %d GB free): dropped the oldest review, %s"
+              % (MIN_FREE_GB, old["ui"]["name"][0]))
 
 
 def history():
@@ -243,45 +284,20 @@ def find_run(run_id):
     return None
 
 
-# ---------------------------------------------------------------- RotoTools: downloads
-# Made only when asked, into temp\rototools_review_dl (old ones are cleaned up), and sent to the browser.
-DOWNLOADS = {
-    "roto_alpha": ("mov", "roto with alpha, ProRes 4444"),
-    "alpha": ("mp4", "alpha matte (white = subject)"),
-}
-
-
-def _frames(ui, key):
-    out = []
-    for f in ui[key]:
-        im = Image.open(_frame_path(f))
-        im.load()
-        out.append(im)
-    return out
-
-
-def _matte(im):
-    a = im.convert("RGBA").getchannel("A")
-    return Image.merge("RGB", (a, a, a))
-
-
-def make_download(run_id, kind):
-    """Write the requested video to temp and return (path, download file name)."""
+# ---------------------------------------------------------------- RotoTools: download
+# The alpha matte (white = subject on black) at full resolution, made from the lossless full-resolution
+# alpha frames when asked, into temp\rototools_review_dl (old ones are cleaned up), and sent to the browser.
+def make_download(run_id, kind="alpha"):
+    """Write the alpha matte video to temp and return (path, download file name)."""
     import av
+    from fractions import Fraction
     ui = find_run(run_id)
     if ui is None:
         raise KeyError("this shot is no longer in the review history")
-    if kind not in DOWNLOADS:
-        raise ValueError("unknown download: %s" % kind)
-    ext = DOWNLOADS[kind][0]
-    if not ui["b_frames"]:
-        raise ValueError("this run has no B (roto) frames")
-    if kind == "alpha":
-        frames = [_matte(im) for im in _frames(ui, "b_frames")]
-    else:  # roto_alpha: the RGBA frames as they are
-        frames = [im.convert("RGBA") for im in _frames(ui, "b_frames")]
-    if not frames:
-        raise ValueError("no frames")
+    if kind != "alpha":
+        raise ValueError("unknown download: %s (only the alpha matte is offered)" % kind)
+    if not ui.get("m_frames"):
+        raise ValueError("this run has no roto with alpha (images_b must be RGBA)")
     folder = os.path.join(folder_paths.get_temp_directory(), "rototools_review_dl")
     os.makedirs(folder, exist_ok=True)
     for f in os.listdir(folder):   # downloads already sent; keep the folder small
@@ -291,30 +307,21 @@ def make_download(run_id, kind):
                 os.remove(p)
         except OSError:
             pass
-    name = "%s_%s.%s" % (ui["name"][0], kind, ext)
+    name = "%s_alpha.mp4" % ui["name"][0]
     path = os.path.join(folder, "%s_%s" % (run_id, name))
-    w, h = frames[0].size
-    fps = ui["fps"][0] or 24
-    from fractions import Fraction
+    first = Image.open(_frame_path(ui["m_frames"][0]))
+    w, h = first.size
+    w, h = w - w % 2, h - h % 2     # yuv420p needs even sizes (a grey matte loses nothing to 4:2:0)
     with av.open(path, "w") as c:
-        if ext == "mov":
-            s = c.add_stream("prores_ks", rate=Fraction(fps).limit_denominator(1001))
-            s.options = {"profile": "4"}   # 4444, keeps the alpha
-            s.pix_fmt = "yuva444p10le"
-            s.width, s.height = w, h
-            pix = "rgba"
-        else:
-            w, h = w - w % 2, h - h % 2     # yuv420p needs even sizes
-            s = c.add_stream("libx264", rate=Fraction(fps).limit_denominator(1001))
-            s.pix_fmt = "yuv420p"
-            s.width, s.height = w, h
-            s.options = {"crf": "16", "preset": "fast"}
-            pix = "rgb24"
-        for im in frames:
+        s = c.add_stream("libx264", rate=Fraction(ui["fps"][0] or 24).limit_denominator(1001))
+        s.pix_fmt = "yuv420p"
+        s.width, s.height = w, h
+        s.options = {"crf": "4", "preset": "medium"}   # visually lossless, still plays everywhere
+        for f in ui["m_frames"]:
+            im = Image.open(_frame_path(f)).convert("RGB")
             if im.size != (w, h):
                 im = im.crop((0, 0, w, h))
-            frame = av.VideoFrame.from_ndarray(np.asarray(im), format=pix)
-            for p in s.encode(frame):
+            for p in s.encode(av.VideoFrame.from_ndarray(np.asarray(im), format="rgb24")):
                 c.mux(p)
         for p in s.encode():
             c.mux(p)
@@ -332,14 +339,14 @@ def _register_routes():
 
     @routes.get("/rototools/review/history")
     async def _history(request):
-        return web.json_response({"runs": history(), "size": HISTORY_SIZE})
+        return web.json_response({"runs": history()})
 
     @routes.get("/rototools/review/download")
     async def _download(request):
         q = request.rel_url.query
         try:
             path, name = await asyncio.get_running_loop().run_in_executor(
-                None, make_download, q.get("run", ""), q.get("kind", "roto_alpha"))
+                None, make_download, q.get("run", ""), q.get("kind", "alpha"))
         except (KeyError, ValueError) as e:
             return web.Response(status=404, text=str(e))
         except Exception as e:

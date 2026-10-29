@@ -66,8 +66,9 @@ A **preview-only** review player for checking roto work, based on [ComfyUI-KM-Vi
 
 - Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
 - **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
-- **History**: the shots reviewed in this ComfyUI session (the last 40) as a strip of thumbnails; click one to review it again.
-- **⤓ Download**: made only when you click, saved by your browser: the **roto with alpha** as ProRes 4444 (.mov, real transparency, for compositing) or the **alpha matte** (mp4, white = subject on black). The background colour is only for viewing in the player.
+- **Light preview by default** (¼ resolution, low jpeg/webp quality): it is only for looking; the **TGA zip is the full-quality master**. Raise `Playback resolution` / `quality` on the node if you want a sharper preview.
+- **History**: every shot reviewed in this ComfyUI session as a strip of thumbnails with a count; click one to review it again. Only if the drive gets low (under 10 GB free) are the oldest dropped. ComfyUI empties the temp folder on restart, so the strip starts fresh then.
+- **⤓ Alpha matte**: downloads the shot's matte (white = subject on black, mp4) at **full resolution**, made from lossless full-size alpha frames, whatever the preview settings. Saved by your browser; nothing goes to ComfyUI's output folder. The background colour is only for viewing in the player.
 
 ## Install
 
