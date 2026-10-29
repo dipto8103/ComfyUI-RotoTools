@@ -11,17 +11,21 @@ const CSS = `
 .rtb { display:flex; flex-direction:column; width:100%; height:100%; box-sizing:border-box; position:relative;
        font:12px sans-serif; color:#ddd; background:#1b1b1b; border-radius:6px; overflow:hidden; }
 .rtb-bar { display:flex; align-items:center; gap:8px; padding:4px 6px; background:#252525; flex:0 0 auto; }
-.rtb-bar .rtb-info { flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rtb-bar .rtb-info { flex:1 1 auto; min-width:0; line-height:1.25; overflow:hidden;
+                     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .rtb-bar button { background:#383838; color:#ddd; border:1px solid #555; border-radius:4px; cursor:pointer; padding:1px 8px; }
 .rtb-bar input[type=range] { width:90px; }
 .rtb-bar .rtb-add { background:#2d5a8a; border-color:#4a7fb5; font-weight:bold; }
 .rtb-bar button:disabled { opacity:.6; cursor:wait; }
 .rtb.rtb-drop { outline:3px dashed #6af; outline-offset:-3px; }
-.rtb-tile .rtb-tx { position:absolute; top:2px; left:2px; width:20px; height:18px; padding:0; font-size:11px;
-                    background:rgba(90,45,45,.85); color:#fbb; border:1px solid #844; border-radius:3px; cursor:pointer;
-                    display:none; }
-.rtb-tile:hover .rtb-tx { display:block; }
-.rtb-tile.ex img, .rtb-tile.ex .rtb-lbl { opacity:.25; filter:grayscale(1); }
+.rtb-tile .rtb-tx { position:absolute; inset:0; margin:auto; width:30%; max-width:72px; min-width:34px;
+                    aspect-ratio:1; padding:0; font-size:clamp(16px, 4vw, 34px); line-height:1; font-weight:bold;
+                    background:rgba(150,40,40,.8); color:#fff; border:2px solid #fbb; border-radius:50%;
+                    cursor:pointer; display:none; align-items:center; justify-content:center;
+                    box-shadow:0 0 8px rgba(0,0,0,.6); }
+.rtb-tile .rtb-tx:hover { background:rgba(200,40,40,.95); }
+.rtb-tile:hover .rtb-tx { display:flex; }
+.rtb-tile.ex img, .rtb-tile.ex video, .rtb-tile.ex .rtb-lbl { opacity:.25; filter:grayscale(1); }
 .rtb-tile.ex .rtb-tx { display:none !important; }
 .rtb-tile .rtb-undo { position:absolute; inset:auto 0 18px 0; margin:auto; width:72px; height:20px; padding:0;
                       font-size:11px; background:#2d5a8a; color:#fff; border:1px solid #4a7fb5; border-radius:3px;
@@ -121,14 +125,13 @@ function setupNode(node) {
     add.title = "Pick one or more folders (Ctrl / Shift click). Open it again to add folders from another drive.";
     const clear = el("button", null, "Clear");
     clear.title = "Remove all folders, videos and exclusions; the node is ready for new folders";
-    const refresh = el("button", null, "Refresh");
     const size = el("input");
     size.type = "range";
     size.min = 60;
     size.max = 480;
     size.value = node.properties?.rototools_tile || 150;
     size.title = "Preview size";
-    bar.append(add, info, size, clear, refresh);
+    bar.append(add, info, size, clear);
     const status = el("div", "rtb-status");   // last run, one line (hidden until the node has run)
     status.hidden = true;
     const scroll = el("div", "rtb-scroll");
@@ -353,7 +356,6 @@ function setupNode(node) {
         }
     }
     const scanSoon = (ms = 500) => { clearTimeout(state.timer); state.timer = setTimeout(scan, ms); };
-    refresh.addEventListener("click", () => { state.sig = ""; scan(); });
 
     function setFolders(text) {
         const w = node.widgets?.find((x) => x.name === "batch_folder");
@@ -530,8 +532,13 @@ app.registerExtension({
     },
     setup() {
         // after each finished run, refresh the done marks (zips written by the saver)
-        api.addEventListener("execution_success", () => {
-            for (const n of app.graph?._nodes ?? []) if (n.type === NODE) n.rototools?.scanSoon(800);
-        });
+        const rescanAll = (ms) => {
+            for (const n of app.graph?._nodes ?? []) if (n.type === NODE) n.rototools?.scanSoon(ms);
+        };
+        api.addEventListener("execution_success", () => rescanAll(800));
+        // coming back to the ComfyUI tab (e.g. after adding shots to a folder in Explorer): pick up what changed
+        // on disk. This replaces the old Refresh button.
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) rescanAll(300); });
+        window.addEventListener("focus", () => rescanAll(300));
     },
 });

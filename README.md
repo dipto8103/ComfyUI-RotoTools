@@ -40,7 +40,7 @@ y\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93 (y)\shot1.zip   (another folder named
 - **Drop video files onto the node.** Like the normal *Load Video*, each dropped video is copied once into `ComfyUI\input\rototools_drops` and that copy is used. The same video dropped again reuses its copy.
 - Or list video files in `batch_folder` like folders (no copy is made).
 - Their zips go **straight into the save folder**: `SAVE FOLDER\clip_a.zip`. Two videos with the same name from different places become `clip_a` and `clip_a (misc)` (misc = the folder the second one sits in), and each keeps its zip name from run to run.
-- ✕ on a single video's tile (hover) takes it out of the batch; **✕ remove all** on the *Single videos* header removes them all.
+- The big ✕ in the middle of a single video's tile (hover) takes it out of the batch; **✕ remove all** on the *Single videos* header removes them all.
 
 ```
 batch_folder  = D:\clips\clip_a.mp4          output_folder = D:\rotos
@@ -54,7 +54,7 @@ x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
    Each input folder gets its own folder inside `output_folder`, named after it; zips are named after the video file. Another input folder with the same name gets its location added: `y\ep93` becomes `ep93 (y)`. Each output folder remembers its input folder (a hidden `.rototools_source` file), so a folder keeps the same output folder from run to run, whether it is batched with the other ep93 or on its own. The preview shows the full path of each. Two videos with the same name inside one folder become `take`, `take_2`.
 3. Set Run's **batch count** to the number "to do" on the preview bar (more is fine: extra runs are skipped in a moment). With `skip_if_zip_exists` on (default), **every run takes the next video that has no zip yet**, so a cancelled queue, a crash or a restart never skips videos: just press Run again. A slim "Last run: n / total …" line shows where the batch is.
 4. A video whose run left no zip (failed or cancelled) is tried once more; after a second try it is passed over until ComfyUI restarts or you press Clear, so one broken video cannot use up the queue. Every decision is printed as `[LoadVideoBatchFolders] …` in ComfyUI's console.
-5. **Leave shots out**: ✕ on a tile (hover) greys it out and it is not queued; **↺ undo** puts it back. This is saved with the workflow. **Clear** empties the node completely (list, left-out shots, last-run line).
+5. **Leave shots out**: the big ✕ in the middle of a tile (hover) greys it out and it is not queued; **↺ undo** puts it back. This is saved with the workflow. **Clear** empties the node completely (list, left-out shots, last-run line).
 6. `index` only matters with `skip_if_zip_exists` off: then the video at `index` is processed even if its zip exists (to redo one).
 
 **Preview grid**: the node shows a thumbnail of every detected video, grouped per input folder (with its full path and output folder). Hover a tile to play it, click it for a full view in the node (✕ to go back to the grid). Resize the node or use the slider to change the tile size. ✓ = zip already exists; the yellow frame is the video of the last run. Videos the browser cannot play (some .mov/.mkv/.avi codecs) still get a thumbnail.
