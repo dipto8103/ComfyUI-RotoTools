@@ -3,7 +3,7 @@
 // MIT License, Copyright (c) 2026 Kasun Malinda (full text in LICENSE-KM-VideoReview).
 // Everything of the original player is kept. RotoTools adds (marked "RotoTools" below):
 //   * B = RGBA roto: show it over a background colour (or checkerboard), as the alpha matte, or as is
-//   * a download row (roto / alpha / side by side / original as mp4, roto with alpha as ProRes 4444)
+//   * a download row (roto with alpha as ProRes 4444 .mov, alpha matte as mp4)
 //   * a history strip of the shots reviewed in this session; click one to review it again
 //
 // VideoReviewPlayer — RV-style A/B frame-sequence review player.
@@ -23,11 +23,8 @@ const BACKGROUNDS = [
   ["#000000", "Black"], ["#ffffff", "White"], ["#808080", "Grey"], ["checker", "Checker"],
 ];
 const DOWNLOAD_KINDS = [
-  ["roto", "Roto on background (mp4)"],
-  ["alpha", "Alpha matte (mp4)"],
-  ["side", "Original | Roto (mp4)"],
-  ["original", "Original (mp4)"],
   ["roto_alpha", "Roto with alpha (ProRes 4444 .mov)"],
+  ["alpha", "Alpha matte (mp4)"],
 ];
 const RR_STYLE_ID = "rr-player-style";
 const RR_CSS = `
@@ -463,12 +460,12 @@ export class VideoReviewPlayer {
     });
     this.rrBgLab = document.createElement("label");
     this.rrBgLab.textContent = "BG";
-    this.rrBgSel = rrSelect("Background behind the roto (also used by the roto / side-by-side downloads)",
+    this.rrBgSel = rrSelect("Background behind the roto in the player",
       BACKGROUNDS, this.s.bg, (v) => {
         this.s.bg = v;
         this.#refreshB();
       });
-    this.rrDlSel = rrSelect("What to download", DOWNLOAD_KINDS, "roto", () => (this.rrDlUser = true));
+    this.rrDlSel = rrSelect("What to download", DOWNLOAD_KINDS, "roto_alpha", () => {});
     this.rrDlBtn = document.createElement("button");
     this.rrDlBtn.textContent = "⤓ Download";
     this.rrDlBtn.title = "Makes the video now and saves it to your browser's Downloads folder (nothing is kept in ComfyUI)";
@@ -642,19 +639,17 @@ export class VideoReviewPlayer {
     for (const el of [this.rrBgLab, this.rrBgSel]) el.style.display = bgShown ? "" : "none";
     this.rrName.textContent = this.s.name || "";
     this.rrName.title = this.s.name || "";
+    // both downloads are made from the roto (B); without it there is nothing to download
     const hasB = this.s.b.length > 0;
-    for (const o of this.rrDlSel.options) o.disabled = o.value !== "original" && !hasB;
-    if (!hasB) this.rrDlSel.value = "original";
-    else if (!this.rrDlUser) this.rrDlSel.value = "roto"; // default until the user picks something
-    this.rrDlBtn.disabled = !this.s.runId;
+    this.rrDlSel.disabled = !hasB;
+    this.rrDlBtn.disabled = !this.s.runId || !hasB;
   }
 
   async #download() {
     if (!this.s.runId) return;
     const kind = this.rrDlSel.value;
-    const bg = (this.s.bg === "checker" ? "#808080" : this.s.bg).replace("#", "");
     const url = this.api.apiURL(`/rototools/review/download?run=${encodeURIComponent(this.s.runId)}` +
-      `&kind=${encodeURIComponent(kind)}&bg=${bg}`);
+      `&kind=${encodeURIComponent(kind)}`);
     const label = this.rrDlBtn.textContent;
     this.rrDlBtn.disabled = true;
     this.rrDlBtn.textContent = "Making the video…";

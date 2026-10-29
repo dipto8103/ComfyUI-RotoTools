@@ -7,7 +7,8 @@
 #   * an RGBA B input (the roto) is kept with its alpha (WebP), so the player can show it over any
 #     background colour or as the alpha matte
 #   * a history of the shots reviewed in this ComfyUI session (the last HISTORY_SIZE), older frames deleted
-#   * downloads made on request (mp4 / ProRes 4444 .mov with alpha) - nothing is saved to the output folder
+#   * downloads made on request (roto with alpha as ProRes 4444 .mov, alpha matte as mp4) - nothing is saved
+#     to the output folder
 import os
 import random
 import time
@@ -38,7 +39,8 @@ class RotoReview:
     OUTPUT_NODE = True
     DESCRIPTION = ("A/B review player (wipe, side by side, difference, flip) for roto work: A = original, "
                    "B = RGBA roto, shown over any background or as the alpha matte. Keeps a history of the "
-                   "shots of this session and downloads mp4 / ProRes on request. Preview only: nothing is "
+                   "shots of this session and downloads the roto with alpha (ProRes 4444 .mov) or the alpha "
+                   "matte (mp4) on request. Preview only: nothing is "
                    "saved to the output folder.")
 
     # Make the node discoverable under the terms people actually search for.
@@ -244,20 +246,9 @@ def find_run(run_id):
 # ---------------------------------------------------------------- RotoTools: downloads
 # Made only when asked, into temp\rototools_review_dl (old ones are cleaned up), and sent to the browser.
 DOWNLOADS = {
-    "roto": ("mp4", "roto over the background colour"),
-    "alpha": ("mp4", "alpha matte (white = subject)"),
-    "side": ("mp4", "original | roto, side by side"),
-    "original": ("mp4", "original (A)"),
     "roto_alpha": ("mov", "roto with alpha, ProRes 4444"),
+    "alpha": ("mp4", "alpha matte (white = subject)"),
 }
-
-
-def _hex_rgb(bg):
-    bg = (bg or "ff0000").lstrip("#")
-    try:
-        return tuple(int(bg[i:i + 2], 16) for i in (0, 2, 4))
-    except ValueError:
-        return (255, 0, 0)
 
 
 def _frames(ui, key):
@@ -269,18 +260,12 @@ def _frames(ui, key):
     return out
 
 
-def _over(im, rgb):
-    im = im.convert("RGBA")
-    base = Image.new("RGBA", im.size, rgb + (255,))
-    return Image.alpha_composite(base, im).convert("RGB")
-
-
 def _matte(im):
     a = im.convert("RGBA").getchannel("A")
     return Image.merge("RGB", (a, a, a))
 
 
-def make_download(run_id, kind, bg="ff0000"):
+def make_download(run_id, kind):
     """Write the requested video to temp and return (path, download file name)."""
     import av
     ui = find_run(run_id)
@@ -289,27 +274,12 @@ def make_download(run_id, kind, bg="ff0000"):
     if kind not in DOWNLOADS:
         raise ValueError("unknown download: %s" % kind)
     ext = DOWNLOADS[kind][0]
-    if kind != "original" and not ui["b_frames"]:
+    if not ui["b_frames"]:
         raise ValueError("this run has no B (roto) frames")
-    rgb = _hex_rgb(bg)
-    if kind == "original":
-        frames = [im.convert("RGB") for im in _frames(ui, "a_frames")]
-    elif kind == "roto":
-        frames = [_over(im, rgb) for im in _frames(ui, "b_frames")]
-    elif kind == "alpha":
+    if kind == "alpha":
         frames = [_matte(im) for im in _frames(ui, "b_frames")]
-    elif kind == "roto_alpha":
+    else:  # roto_alpha: the RGBA frames as they are
         frames = [im.convert("RGBA") for im in _frames(ui, "b_frames")]
-    else:  # side by side, both at the height of A
-        a_frames, b_frames = _frames(ui, "a_frames"), _frames(ui, "b_frames")
-        frames = []
-        for a, b in zip(a_frames, b_frames):
-            a = a.convert("RGB")
-            b = _over(b, rgb).resize((max(1, round(b.width * a.height / b.height)), a.height))
-            pair = Image.new("RGB", (a.width + b.width, a.height))
-            pair.paste(a, (0, 0))
-            pair.paste(b, (a.width, 0))
-            frames.append(pair)
     if not frames:
         raise ValueError("no frames")
     folder = os.path.join(folder_paths.get_temp_directory(), "rototools_review_dl")
@@ -369,7 +339,7 @@ def _register_routes():
         q = request.rel_url.query
         try:
             path, name = await asyncio.get_running_loop().run_in_executor(
-                None, make_download, q.get("run", ""), q.get("kind", "roto"), q.get("bg", "ff0000"))
+                None, make_download, q.get("run", ""), q.get("kind", "roto_alpha"))
         except (KeyError, ValueError) as e:
             return web.Response(status=404, text=str(e))
         except Exception as e:

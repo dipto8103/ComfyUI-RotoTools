@@ -67,7 +67,7 @@ A **preview-only** review player for checking roto work, based on [ComfyUI-KM-Vi
 - Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
 - **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
 - **History**: the shots reviewed in this ComfyUI session (the last 40) as a strip of thumbnails; click one to review it again.
-- **⤓ Download**: made only when you click, saved by your browser: roto on the background, alpha matte, original | roto side by side, original (mp4), or the roto with alpha as ProRes 4444 (.mov).
+- **⤓ Download**: made only when you click, saved by your browser: the **roto with alpha** as ProRes 4444 (.mov, real transparency, for compositing) or the **alpha matte** (mp4, white = subject on black). The background colour is only for viewing in the player.
 
 ## Install
 

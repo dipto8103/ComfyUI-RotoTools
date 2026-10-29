@@ -8,7 +8,7 @@ MAJOR = breaking change (renamed/removed node or input), MINOR = new node or bac
 - **Roto Review (A/B)** (`image/video`): a preview-only review player for roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT; notice kept in the copied files and in `LICENSE-KM-VideoReview`). All of the original player is kept (wipe H/V, side by side, difference, A/B flip, frame-accurate transport, loop/bounce, fullscreen, exposure/gamma, info). Added on top:
   - an **RGBA B** (the roto) keeps its alpha: show it over a background (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is
   - a **history strip** of the shots reviewed in this session (last 40; older preview frames are deleted from temp); click one to review it again
-  - **⤓ Download** made on request: roto on background, alpha matte, original | roto side by side, original (mp4) or roto with alpha (ProRes 4444 .mov), saved by the browser; nothing goes to ComfyUI's output folder
+  - **⤓ Download** made on request: the roto with alpha (ProRes 4444 .mov, real transparency) or the alpha matte (mp4), saved by the browser; nothing goes to ComfyUI's output folder
   - optional `name` input (e.g. `zip_name`) for the history and download names
 
 ## [0.3.6] - 2026-10-29
