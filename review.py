@@ -289,8 +289,6 @@ def find_run(run_id):
 # alpha frames when asked, into temp\rototools_review_dl (old ones are cleaned up), and sent to the browser.
 def make_download(run_id, kind="alpha"):
     """Write the alpha matte video to temp and return (path, download file name)."""
-    import av
-    from fractions import Fraction
     ui = find_run(run_id)
     if ui is None:
         raise KeyError("this shot is no longer in the review history")
@@ -298,6 +296,8 @@ def make_download(run_id, kind="alpha"):
         raise ValueError("unknown download: %s (only the alpha matte is offered)" % kind)
     if not ui.get("m_frames"):
         raise ValueError("this run has no roto with alpha (images_b must be RGBA)")
+    import av   # ComfyUI ships PyAV; imported here so the checks above work without it
+    from fractions import Fraction
     folder = os.path.join(folder_paths.get_temp_directory(), "rototools_review_dl")
     os.makedirs(folder, exist_ok=True)
     for f in os.listdir(folder):   # downloads already sent; keep the folder small
