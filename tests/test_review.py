@@ -31,7 +31,8 @@ def test_roto_b_keeps_alpha_and_ui(review):
     out = review.RotoReview().review(frames(), frames(c=4), preview_format="jpeg (low quality)",
                                      name="ep93/shot5", **{"Base fps": 25.0, "Playback resolution": "1:1"})
     ui = out["ui"]
-    assert ui["b_alpha"] == [True] and ui["name"] == ["ep93_shot5"] and len(ui["run_id"][0]) == 6
+    assert ui["b_alpha"] == [True] and ui["name"] == ["ep93/shot5"] and ui["file"] == ["ep93_shot5"]
+    assert len(ui["run_id"][0]) == 6
     assert ui["a_frames"][0]["filename"].endswith(".jpg") and ui["b_frames"][0]["filename"].endswith(".webp")
     b0 = Image.open(review._frame_path(ui["b_frames"][0]))
     assert b0.mode == "RGBA" and b0.getpixel((0, 0))[3] == 0 and b0.getpixel((24, 16))[3] == 255
@@ -86,6 +87,16 @@ def test_alpha_matte_download_is_full_resolution_and_exact(review):
         y = got[0].to_ndarray(format="rgb24")[..., 0].astype(int)
         assert y[50, 80] < 25 and y[16, 24] > 230                               # black background, white subject
         assert 100 < y[16, 36] < 155                                            # the soft edge stays grey
+
+
+def test_labels_from_load_video_batch(review):
+    pytest.importorskip("av")
+    names = ["folderA / shot6", "folderB / shot6", "folderA (c) / shot6", "single / shot6 (misc)"]
+    uis = [review.RotoReview().review(frames(1), frames(1, c=4), name=n)["ui"] for n in names]
+    assert [u["name"][0] for u in uis] == names                       # history shows them as they are
+    files = [review.make_download(u["run_id"][0])[1] for u in uis]
+    assert files == ["folderA_shot6_alpha.mp4", "folderB_shot6_alpha.mp4", "folderA (c)_shot6_alpha.mp4",
+                     "single_shot6 (misc)_alpha.mp4"]                 # all different
 
 
 def test_download_errors(review):

@@ -32,11 +32,15 @@ const RR_CSS = `
   cursor:pointer; padding:0 8px; font-size:11px; }
 .rr-bar button:disabled { opacity:.6; cursor:wait; }
 .rr-bar .rr-name { flex:1 1 auto; color:#fc3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:40px; }
-.rr-hist { display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding:4px 6px; background:#151515;
-  border-top:1px solid #2a2a2a; flex:0 0 auto; min-height:58px; }
+/* RotoTools layout: the video gets exactly its own shape at the node's width (no black bars) and the
+   history grid takes all the height left below it, scrolling when it is full. The node keeps your size. */
+.rr-root .vr-viewport { flex:0 1 auto; aspect-ratio:var(--rr-ratio, 16 / 9); min-height:120px; }
+.rr-root:fullscreen .vr-viewport { flex:1 1 auto; aspect-ratio:auto; }
+.rr-root:fullscreen .rr-hist { display:none; }
+.rr-hist { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; overflow-y:auto; overflow-x:hidden;
+  padding:4px 6px; background:#151515; border-top:1px solid #2a2a2a; flex:1 1 64px; min-height:64px; }
 .rr-hist .rr-empty { color:#666; font-size:11px; align-self:center; }
-.rr-hist .rr-count { flex:0 0 auto; align-self:center; color:#9cf; font-size:11px; writing-mode:vertical-rl;
-  transform:rotate(180deg); white-space:nowrap; }
+.rr-hist .rr-count { flex:0 0 100%; color:#9cf; font-size:11px; }
 .rr-h { flex:0 0 auto; width:84px; cursor:pointer; border:2px solid transparent; border-radius:3px;
   background:#000; position:relative; }
 .rr-h:hover { border-color:#58f; }
@@ -478,6 +482,7 @@ export class VideoReviewPlayer {
     hist.innerHTML = '<span class="rr-empty">Shots reviewed in this session will appear here.</span>';
     this.#syncRotoUi();
 
+    root.classList.add("rr-root"); // RotoTools layout rules apply to this player only
     root.append(viewport, controls, rr, cbar, hist, info);
 
     // --- viewport interaction (wipe drag) ---
@@ -794,6 +799,7 @@ export class VideoReviewPlayer {
     const aSize = payload.a_size?.[0];
     const bSize = payload.b_size?.[0];
     if (aSize?.[0] > 0) this.s.aspect = aSize[1] / aSize[0];
+    this.root.style.setProperty("--rr-ratio", String(1 / this.s.aspect)); // RotoTools: snug video area
 
     const nodeFps = payload.fps?.[0];
     if (nodeFps && !this.s.userFps) this.setFps(nodeFps);
