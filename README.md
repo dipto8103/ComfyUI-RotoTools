@@ -61,6 +61,14 @@ x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
 
 Outputs: `video`, `zip_name`, `video_path`, `index`, `total`, `zip_folder`.
 
+### Roto Review (A/B)  — `image/video`
+A **preview-only** review player for checking roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT). Connect the **original frames to `images_a`** and the **RGBA roto frames to `images_b`** (optionally `zip_name` to `name`). Nothing is written to ComfyUI's output folder: preview frames live in the temp folder.
+
+- Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
+- **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
+- **History**: the shots reviewed in this ComfyUI session (the last 40) as a strip of thumbnails; click one to review it again.
+- **⤓ Download**: made only when you click, saved by your browser: roto on the background, alpha matte, original | roto side by side, original (mp4), or the roto with alpha as ProRes 4444 (.mov).
+
 ## Install
 
 **Comfy Registry / ComfyUI-Manager** (once published): search for `RotoTools` in ComfyUI-Manager, or run `comfy node install rototools`.
@@ -91,3 +99,5 @@ The tests stub `folder_paths`, so ComfyUI itself is not needed.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The Roto Review player (`review.py`, `web/js/roto_review*.js`) is based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview), Copyright (c) 2026 Kasun Malinda, MIT License; its notice is kept in those files and in [LICENSE-KM-VideoReview](LICENSE-KM-VideoReview).
