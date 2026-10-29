@@ -61,6 +61,15 @@ x\ep93\shot1\shot1.mp4   ->  D:\rotos\ep93\shot1.zip
 
 Outputs: `video`, `zip_name`, `video_path`, `index`, `total`, `zip_folder`.
 
+### Roto Review (A/B)  — `image/video`
+A **preview-only** review player for checking roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT). Connect the **original frames to `images_a`** and the **RGBA roto frames to `images_b`** (optionally `zip_name` to `name`). Nothing is written to ComfyUI's output folder: preview frames live in the temp folder.
+
+- Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
+- **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
+- **Light preview by default** (¼ resolution, low jpeg/webp quality): it is only for looking; the **TGA zip is the full-quality master**. Raise `Playback resolution` / `quality` on the node if you want a sharper preview.
+- **History**: every shot reviewed in this ComfyUI session as a strip of thumbnails with a count; click one to review it again. Only if the drive gets low (under 10 GB free) are the oldest dropped. ComfyUI empties the temp folder on restart, so the strip starts fresh then.
+- **⤓ Alpha matte**: downloads the shot's matte (white = subject on black, mp4) at **full resolution**, made from lossless full-size alpha frames, whatever the preview settings. Saved by your browser; nothing goes to ComfyUI's output folder. The background colour is only for viewing in the player.
+
 ## Install
 
 **Comfy Registry / ComfyUI-Manager** (once published): search for `RotoTools` in ComfyUI-Manager, or run `comfy node install rototools`.
@@ -91,3 +100,5 @@ The tests stub `folder_paths`, so ComfyUI itself is not needed.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The Roto Review player (`review.py`, `web/js/roto_review*.js`) is based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview), Copyright (c) 2026 Kasun Malinda, MIT License; its notice is kept in those files and in [LICENSE-KM-VideoReview](LICENSE-KM-VideoReview).

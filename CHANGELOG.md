@@ -3,6 +3,15 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.4.0] - 2026-10-29
+### Added
+- **Roto Review (A/B)** (`image/video`): a preview-only review player for roto work, based on [ComfyUI-KM-VideoReview](https://github.com/KasunMalinda/ComfyUI-KM-VideoReview) by Kasun Malinda (MIT; notice kept in the copied files and in `LICENSE-KM-VideoReview`). All of the original player is kept (wipe H/V, side by side, difference, A/B flip, frame-accurate transport, loop/bounce, fullscreen, exposure/gamma, info). Added on top:
+  - an **RGBA B** (the roto) keeps its alpha: show it over a background (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is
+  - a **history strip** of every shot reviewed in this session, with a count (the oldest are only dropped when the drive has under 10 GB free); click one to review it again
+  - **⤓ Alpha matte** download (white on black mp4) at **full resolution**, made from lossless full-size alpha frames, whatever the preview settings; saved by the browser, nothing goes to ComfyUI's output folder
+  - the lightest preview by default (¼ resolution, quality 50): the TGA zip is the full-quality master
+  - optional `name` input (e.g. `zip_name`) for the history and download names
+
 ## [0.3.6] - 2026-10-29
 ### Changed
 - **Load Video Batch (Folders)** preview: the ✕ that leaves a shot out is a large round button in the middle of the tile (on hover), easier to hit.

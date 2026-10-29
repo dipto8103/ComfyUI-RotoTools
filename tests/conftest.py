@@ -17,6 +17,11 @@ def nodes_mod(tmp_path_factory):
     fp = types.ModuleType("folder_paths")
     fp.get_output_directory = lambda: str(base / "output")
     fp.get_temp_directory = lambda: str(base / "temp")
+
+    def get_save_image_path(prefix, output_dir, w=0, h=0):   # like ComfyUI's, without the counter search
+        os.makedirs(output_dir, exist_ok=True)
+        return output_dir, prefix, 0, "", prefix
+    fp.get_save_image_path = get_save_image_path
     sys.modules["folder_paths"] = fp
     sys.path.insert(0, ROOT)
     import importlib
