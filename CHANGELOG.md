@@ -3,6 +3,14 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.4.2] - 2026-11-24
+### Added
+- **Load Video Batch (Folders)**: **⇄ Inverse selection** button. To run only a few shots of a big folder (10 of 500), leave those few out (✕) and press it: they become the batch and all the others are left out. Press it again to swap back.
+### Fixed
+- **Roto Review (A/B)**: a very long shot name pushed the B view (Roto / Alpha / As is), BG and Alpha matte controls out of the node. The name now has its own line under them (two lines at most, full name in the tooltip).
+- **Roto Review (A/B)**: no control row is cut on a small node any more: the history and then the video shrink first, and the node cannot be made smaller than its controls.
+- **Load Video Batch (Folders)**: the preview's buttons wrap on a narrow node instead of being squeezed; leaving out a video whose path contains a comma works.
+
 ## [0.4.1] - 2026-10-29
 ### Added
 - **Load Video Batch (Folders)**: new last output `shot_label`, where the shot comes from + its zip name (`ep93 / shot6`, `ep93 (y) / shot6`, `single / shot6`), unique even when shots in different folders (or a dropped video) have the same name. Existing connections are unchanged.

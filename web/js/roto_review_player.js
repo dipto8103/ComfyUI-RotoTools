@@ -31,14 +31,22 @@ const RR_CSS = `
 .rr-bar button { background:#2d5a8a; color:#fff; border:1px solid #4a7fb5; border-radius:3px; height:22px;
   cursor:pointer; padding:0 8px; font-size:11px; }
 .rr-bar button:disabled { opacity:.6; cursor:wait; }
-.rr-bar .rr-name { flex:1 1 auto; color:#fc3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:40px; }
+/* the shot name has its own line UNDER the controls (2 lines at most, full name in the tooltip), so however long
+   it is, it can never move or hide them */
+.rr-bar .rr-name { flex:0 0 100%; min-width:0; color:#fc3; line-height:1.25; overflow:hidden; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.rr-bar .rr-name:empty { display:none; }
 /* RotoTools layout: the video gets exactly its own shape at the node's width (no black bars) and the
-   history grid takes all the height left below it, scrolling when it is full. The node keeps your size. */
-.rr-root .vr-viewport { flex:0 1 auto; aspect-ratio:var(--rr-ratio, 16 / 9); min-height:120px; }
+   history grid takes all the height left below it, scrolling when it is full. The node keeps your size.
+   When the node is short, first the history and then the video shrink; the control rows are never cut
+   (as a last resort the player scrolls). */
+.vr-root.rr-root { overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; }
+.rr-root .vr-group { flex-wrap:wrap; }
+.rr-root .vr-viewport { flex:0 1 auto; aspect-ratio:var(--rr-ratio, 16 / 9); min-height:60px; }
 .rr-root:fullscreen .vr-viewport { flex:1 1 auto; aspect-ratio:auto; }
 .rr-root:fullscreen .rr-hist { display:none; }
 .rr-hist { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; overflow-y:auto; overflow-x:hidden;
-  padding:4px 6px; background:#151515; border-top:1px solid #2a2a2a; flex:1 1 64px; min-height:64px; }
+  padding:4px 6px; background:#151515; border-top:1px solid #2a2a2a; flex:1 100 64px; min-height:24px; }
 .rr-hist .rr-empty { color:#666; font-size:11px; align-self:center; }
 .rr-hist .rr-count { flex:0 0 100%; color:#9cf; font-size:11px; }
 .rr-h { flex:0 0 auto; width:84px; cursor:pointer; border:2px solid transparent; border-radius:3px;
@@ -208,6 +216,16 @@ export class VideoReviewPlayer {
 
   get aspect() {
     return this.s.aspect;
+  }
+
+  // RotoTools: height of the control rows as they are laid out now (they wrap on a narrow node), and the
+  // smallest player that still shows all of them with a little of the video and the history.
+  get rowsHeight() {
+    return this.rrRows.reduce((sum, el) => sum + el.offsetHeight, 0);
+  }
+
+  get minHeight() {
+    return Math.max(220, this.rowsHeight + 60 + 24);
   }
 
   // ------------------------------------------------------------------ DOM
@@ -475,7 +493,7 @@ export class VideoReviewPlayer {
       e.stopPropagation();
       this.#download();
     });
-    rr.append(this.rrName, this.rrViewLab, this.rrViewSel, this.rrBgLab, this.rrBgSel, this.rrDlBtn);
+    rr.append(this.rrViewLab, this.rrViewSel, this.rrBgLab, this.rrBgSel, this.rrDlBtn, this.rrName);
     const hist = (this.rrHist = document.createElement("div"));
     hist.className = "rr-hist";
     hist.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -484,6 +502,7 @@ export class VideoReviewPlayer {
 
     root.classList.add("rr-root"); // RotoTools layout rules apply to this player only
     root.append(viewport, controls, rr, cbar, hist, info);
+    this.rrRows = [controls, rr, cbar, info]; // RotoTools: rows that must always be visible
 
     // --- viewport interaction (wipe drag) ---
     canvas.addEventListener("pointerdown", (e) => {

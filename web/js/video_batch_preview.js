@@ -10,13 +10,14 @@ const WATCH = ["batch_folder", "output_folder", "extensions", "recursive"];
 const CSS = `
 .rtb { display:flex; flex-direction:column; width:100%; height:100%; box-sizing:border-box; position:relative;
        font:12px sans-serif; color:#ddd; background:#1b1b1b; border-radius:6px; overflow:hidden; }
-.rtb-bar { display:flex; align-items:center; gap:8px; padding:4px 6px; background:#252525; flex:0 0 auto; }
-.rtb-bar .rtb-info { flex:1 1 auto; min-width:0; line-height:1.25; overflow:hidden;
+.rtb-bar { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; padding:4px 6px; background:#252525; flex:0 0 auto; }
+.rtb-bar .rtb-info { flex:1 1 260px; min-width:0; line-height:1.25; overflow:hidden;
                      display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .rtb-bar button { background:#383838; color:#ddd; border:1px solid #555; border-radius:4px; cursor:pointer; padding:1px 8px; }
 .rtb-bar input[type=range] { width:90px; }
 .rtb-bar .rtb-add { background:#2d5a8a; border-color:#4a7fb5; font-weight:bold; }
 .rtb-bar button:disabled { opacity:.6; cursor:wait; }
+.rtb-bar .rtb-inv:disabled { opacity:.4; cursor:default; }
 .rtb.rtb-drop { outline:3px dashed #6af; outline-offset:-3px; }
 .rtb-tile .rtb-tx { position:absolute; inset:0; margin:auto; width:30%; max-width:72px; min-width:34px;
                     aspect-ratio:1; padding:0; font-size:clamp(16px, 4vw, 34px); line-height:1; font-weight:bold;
@@ -110,7 +111,7 @@ const rlog = (...a) => console.info("[RotoTools]", ...a);
 // comparable key of a listed path, close to Python's os.path.normcase on Windows
 const pkey = (p) => String(p).trim().replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
 
-// entries of a batch_folder / excluded text, like batch.split_folders (lines, commas, "quoted" paths)
+// entries of a batch_folder text, like batch.split_folders (lines, commas, "quoted" paths)
 const parseList = (text) => [...String(text || "").matchAll(/"([^"]*)"|([^",\r\n]+)/g)]
     .map((m) => (m[1] ?? m[2]).trim()).filter(Boolean);
 
@@ -125,13 +126,17 @@ function setupNode(node) {
     add.title = "Pick one or more folders (Ctrl / Shift click). Open it again to add folders from another drive.";
     const clear = el("button", null, "Clear");
     clear.title = "Remove all folders, videos and exclusions; the node is ready for new folders";
+    const inv = el("button", "rtb-inv", "⇄ Inverse selection");
+    inv.title = "Swap: the left-out videos go back in the batch and all the others are left out.\n" +
+                "To run only a few of many: leave out (✕) the few you want, then press this.";
+    inv.disabled = true;
     const size = el("input");
     size.type = "range";
     size.min = 60;
     size.max = 480;
     size.value = node.properties?.rototools_tile || 150;
     size.title = "Preview size";
-    bar.append(add, info, size, clear);
+    bar.append(add, inv, size, clear, info);   // info last: it drops to its own line on a narrow node
     const status = el("div", "rtb-status");   // last run, one line (hidden until the node has run)
     status.hidden = true;
     const scroll = el("div", "rtb-scroll");
@@ -149,20 +154,36 @@ function setupNode(node) {
         exW.options.hidden = true;
         exW.computeSize = () => [0, -4];
     }
-    const excludedSet = () => new Set(parseList(exW?.value).map(pkey));
+    // one path per line, like batch.excluded_keys (not parseList: a path may contain a comma)
+    const excludedList = () => String(exW?.value || "").split(/\r?\n/).map((p) => p.trim()).filter(Boolean);
+    const excludedSet = () => new Set(excludedList().map(pkey));
     function setExcluded(paths) {
         if (!exW) return;
         exW.value = paths.join("\n");
         node.graph?.setDirtyCanvas?.(true, true);
     }
     function toggleExcluded(it) {
-        const cur = parseList(exW?.value);
+        const cur = excludedList();
         const k = pkey(it.path);
         const on = !cur.some((p) => pkey(p) === k);
         setExcluded(on ? [...cur, it.path] : cur.filter((p) => pkey(p) !== k));
         rlog(on ? "excluded" : "included again", it.path);
         if (state.data) render(state.data, true);
     }
+
+    // Inverse selection: in <-> left out for every listed video. Left-out marks of videos that are not listed
+    // right now (a folder that was removed) stay as they are.
+    function invertExcluded() {
+        const items = state.data?.items ?? [];
+        if (!items.length) return;
+        const ex = excludedSet();
+        const listed = new Set(items.map((i) => pkey(i.path)));
+        const out = items.filter((i) => !ex.has(pkey(i.path))).map((i) => i.path);
+        setExcluded([...excludedList().filter((p) => !listed.has(pkey(p))), ...out]);
+        rlog(`inverse selection: ${items.length - out.length} in the batch, ${out.length} left out`);
+        render(state.data);
+    }
+    inv.addEventListener("click", invertExcluded);
 
     const applySize = () => {
         grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size.value}px, 1fr))`;
@@ -268,6 +289,7 @@ function setupNode(node) {
         const nEx = data.items.filter((i) => ex.has(pkey(i.path))).length;
         const doneCount = data.items.filter((i) => i.done && !ex.has(pkey(i.path))).length;
         const left = data.total - nEx - doneCount;
+        inv.disabled = nEx === 0;   // nothing picked yet: inverting would leave out everything
         const nFolders = data.groups.filter((g) => g.kind !== "files").length;
         const nSingles = data.groups.find((g) => g.kind === "files")?.count ?? 0;
         info.textContent = `${data.total} videos (${nFolders} folder(s)` + (nSingles ? `, ${nSingles} single` : "") + ")" +
@@ -330,6 +352,7 @@ function setupNode(node) {
             state.tiles = [];
             closeFull();
             grid.textContent = "";
+            inv.disabled = true;
             info.textContent = "Add folders, drop videos here, or paste paths in batch_folder";
             return;
         }
