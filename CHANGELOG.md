@@ -5,7 +5,7 @@ MAJOR = breaking change (renamed/removed node or input), MINOR = new node or bac
 
 ## [0.4.2] - 2026-11-24
 ### Added
-- **Load Video Batch (Folders)**: **⇄ Inverse selection** button. To run only a few shots of a big folder (10 of 500), leave those few out (✕) and press it: they become the batch and all the others are left out. Press it again to swap back.
+- **Load Video Batch (Folders)**: **⇄ Inverse selection** on every folder's line. To run only a few shots of a big folder (10 of 500), leave those few out (✕) and press it: they become the batch and all the others of that folder are left out. Press it again to swap back. Other folders are not touched. **⇄ Inverse all folders** (on the bar) does every folder at once. Single videos are never inversed. A folder's line shows how many of its videos are in and left out.
 ### Fixed
 - **Roto Review (A/B)**: a very long shot name pushed the B view (Roto / Alpha / As is), BG and Alpha matte controls out of the node. The name now has its own line under them (two lines at most, full name in the tooltip).
 - **Roto Review (A/B)**: no control row is cut on a small node any more: the history and then the video shrink first, and the node cannot be made smaller than its controls.

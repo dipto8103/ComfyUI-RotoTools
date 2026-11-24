@@ -34,6 +34,9 @@ const CSS = `
 .rtb-tile.ex .rtb-undo { display:block; top:0; bottom:0; }
 .rtb-group .rtb-rm { float:right; background:#5a2d2d; color:#fbb; border:1px solid #844; border-radius:4px;
                      cursor:pointer; padding:0 6px; margin-left:8px; }
+.rtb-group .rtb-ginv { float:right; background:#383838; color:#ddd; border:1px solid #555; border-radius:4px;
+                       cursor:pointer; padding:0 6px; margin-left:8px; }
+.rtb-group .rtb-ginv:disabled { opacity:.4; cursor:default; }
 .rtb-status { flex:0 0 auto; padding:2px 8px; background:#202a33; color:#fc3; font-size:11px;
               white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rtb-scroll { flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:6px; }
@@ -126,9 +129,10 @@ function setupNode(node) {
     add.title = "Pick one or more folders (Ctrl / Shift click). Open it again to add folders from another drive.";
     const clear = el("button", null, "Clear");
     clear.title = "Remove all folders, videos and exclusions; the node is ready for new folders";
-    const inv = el("button", "rtb-inv", "⇄ Inverse selection");
-    inv.title = "Swap: the left-out videos go back in the batch and all the others are left out.\n" +
-                "To run only a few of many: leave out (✕) the few you want, then press this.";
+    const inv = el("button", "rtb-inv", "⇄ Inverse all folders");
+    inv.title = "Swap in and left out in ALL the folders at once (single videos are not touched).\n" +
+                "Press it after adding every folder and picking in each of them: a folder already inversed is swapped " +
+                "back. For one folder only, use the button on that folder's line.";
     inv.disabled = true;
     const size = el("input");
     size.type = "range";
@@ -144,7 +148,7 @@ function setupNode(node) {
     scroll.appendChild(grid);
     root.append(bar, status, scroll);
 
-    const state = { data: null, sig: "", tiles: [], current: -1, timer: null, seq: 0 };
+    const state = { data: null, sig: "", tiles: [], heads: [], current: -1, timer: null, seq: 0 };
 
     // ---- excluded videos: kept in the hidden "excluded" widget (one path per line), saved with the workflow
     const exW = node.widgets?.find((x) => x.name === "excluded");
@@ -171,19 +175,34 @@ function setupNode(node) {
         if (state.data) render(state.data, true);
     }
 
-    // Inverse selection: in <-> left out for every listed video. Left-out marks of videos that are not listed
-    // right now (a folder that was removed) stay as they are.
-    function invertExcluded() {
-        const items = state.data?.items ?? [];
+    // Inverse selection: in <-> left out for the videos of one folder (gi) or of every folder. Single videos were
+    // picked one by one, so they are never inversed. All other left-out marks stay as they are.
+    const isFolder = (gi) => state.data?.groups[gi]?.kind !== "files";
+    function invertExcluded(gi = null) {
+        const items = (state.data?.items ?? []).filter((i) => isFolder(i.group) && (gi === null || i.group === gi));
         if (!items.length) return;
         const ex = excludedSet();
         const listed = new Set(items.map((i) => pkey(i.path)));
         const out = items.filter((i) => !ex.has(pkey(i.path))).map((i) => i.path);
         setExcluded([...excludedList().filter((p) => !listed.has(pkey(p))), ...out]);
-        rlog(`inverse selection: ${items.length - out.length} in the batch, ${out.length} left out`);
+        rlog(`inverse selection (${gi === null ? "all folders" : state.data.groups[gi].root}): ` +
+             `${items.length - out.length} in the batch, ${out.length} left out`);
         render(state.data);
     }
-    inv.addEventListener("click", invertExcluded);
+    inv.addEventListener("click", () => invertExcluded());
+
+    // a folder line's count and inverse button; nothing left out yet = nothing to inverse
+    function updateHeads(data, ex) {
+        const out = data.groups.map(() => 0);
+        for (const i of data.items) if (ex.has(pkey(i.path))) out[i.group]++;
+        state.heads.forEach((h, gi) => {
+            if (!h) return;
+            h.count.textContent = data.groups[gi].count + " videos" +
+                (out[gi] ? `, ${data.groups[gi].count - out[gi]} in, ${out[gi]} left out` : "");
+            h.inv.disabled = !out[gi];
+        });
+        inv.disabled = !data.groups.some((g, gi) => g.kind !== "files" && out[gi]);
+    }
 
     const applySize = () => {
         grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size.value}px, 1fr))`;
@@ -289,7 +308,6 @@ function setupNode(node) {
         const nEx = data.items.filter((i) => ex.has(pkey(i.path))).length;
         const doneCount = data.items.filter((i) => i.done && !ex.has(pkey(i.path))).length;
         const left = data.total - nEx - doneCount;
-        inv.disabled = nEx === 0;   // nothing picked yet: inverting would leave out everything
         const nFolders = data.groups.filter((g) => g.kind !== "files").length;
         const nSingles = data.groups.find((g) => g.kind === "files")?.count ?? 0;
         info.textContent = `${data.total} videos (${nFolders} folder(s)` + (nSingles ? `, ${nSingles} single` : "") + ")" +
@@ -307,12 +325,14 @@ function setupNode(node) {
                 t._done.textContent = it.done ? "✓" : "";
                 t.classList.toggle("ex", ex.has(t._key));
             });
+            updateHeads(data, ex);
             return;
         }
         state.sig = sig;
         closeFull();
         grid.textContent = "";
         state.tiles = [];
+        state.heads = [];
         for (const e of data.errors) grid.appendChild(el("div", "rtb-group rtb-err", e));
         if (!data.total && !data.errors.length) grid.appendChild(el("div", "rtb-group", "No videos found."));
         data.groups.forEach((g, gi) => {
@@ -327,7 +347,13 @@ function setupNode(node) {
             } else {
                 rm.title = "Take this folder out of the batch (nothing is deleted on disk)";
                 rm.addEventListener("click", () => removeEntries([g.key]));
-                h.append(rm, `${g.label}  (${g.count} videos)  → ${g.out}`, el("small", null, g.root));
+                const ginv = el("button", "rtb-ginv", "⇄ Inverse selection");
+                ginv.title = "Swap in and left out in THIS folder only.\n" +
+                             "To run only a few of many: leave out (✕) the few you want, then press this.";
+                ginv.addEventListener("click", () => invertExcluded(gi));
+                const count = el("span");
+                state.heads[gi] = { inv: ginv, count };
+                h.append(rm, ginv, `${g.label}  (`, count, `)  → ${g.out}`, el("small", null, g.root));
             }
             grid.appendChild(h);
             for (const it of data.items) {
@@ -338,6 +364,7 @@ function setupNode(node) {
                 grid.appendChild(t);
             }
         });
+        updateHeads(data, ex);
         markCurrent(state.current);
     }
 
@@ -350,6 +377,7 @@ function setupNode(node) {
             state.sig = "";
             state.data = null;
             state.tiles = [];
+            state.heads = [];
             closeFull();
             grid.textContent = "";
             inv.disabled = true;
