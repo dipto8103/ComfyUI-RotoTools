@@ -9,9 +9,7 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 import { VideoReviewPlayer } from "./roto_review_player.js";
 
-const CONTROLS_H = 40;
-const INFO_HEADER_H = 26; // collapsed info section (header only)
-const ROTO_ROWS_H = 32 + 90; // RotoTools: roto/download row + one row of the history grid
+const HISTORY_ROW_H = 90; // RotoTools: one row of the history grid
 const MIN_WIDTH = 320;
 
 // Resize the node so the viewport matches the loaded footage aspect while
@@ -22,7 +20,7 @@ function fitNodeToAspect(node, player) {
   const widget = node.widgets?.find((w) => w.name === "vr_player");
   const topY = widget?.y || 142; // y of the player widget inside the node
   const width = Math.max(node.size[0], MIN_WIDTH);
-  const needed = topY + Math.round(width * player.aspect) + CONTROLS_H + INFO_HEADER_H + ROTO_ROWS_H + 8;
+  const needed = topY + Math.round(width * player.aspect) + player.rowsHeight + HISTORY_ROW_H + 28;
   if (width !== node.size[0] || node.size[1] < needed) {
     node.setSize([width, Math.max(node.size[1], needed)]);
   }
@@ -86,7 +84,9 @@ app.registerExtension({
         // Sizing contract of the current frontend (DOMWidgetImpl.computeLayoutSize):
         // the widget fills the node's remaining height, clamped by getMinHeight.
         // Overriding widget.computeSize instead collapses the host to 0px.
-        getMinHeight: () => 220,
+        // RotoTools: never smaller than its control rows (measured: they wrap on a narrow node), plus the 10 px
+        // margin ComfyUI keeps above and below a DOM widget
+        getMinHeight: () => player.minHeight + 20,
       });
       // Default a freshly created node wide/tall enough to show the transport
       // controls. Restored nodes get their saved size from configure() afterward.

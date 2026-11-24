@@ -399,3 +399,23 @@ def test_excluded_keys(batch, tmp_path):
     # same file on Windows (case-insensitive), two files on Linux / macOS
     assert batch.excluded_keys("%s\n\n  %s  \n" % (a, a.upper())) == {os.path.normcase(a), os.path.normcase(a.upper())}
     assert batch.excluded_keys("") == set()
+
+
+def test_inverse_selection_runs_only_the_kept_videos(batch, monkeypatch, tmp_path):
+    """What the preview's Inverse selection button sends: 490 of 500 left out, some paths with a comma."""
+    root, out = tmp_path / "EP_95", tmp_path / "out"
+    make(root, ["shot%03d.mp4" % i for i in range(1, 500)] + ["take, two.mp4"])
+    keep = ["shot%03d" % i for i in (3, 50, 111, 112, 200, 301, 402, 498, 499)] + ["take, two"]
+    excluded = "\n".join(str(p) for p in sorted(root.iterdir()) if p.stem not in keep)
+    assert len(excluded.splitlines()) == 490
+    picked = []
+    for _ in range(10):
+        res, B = run(batch, monkeypatch, str(root), output_folder=str(out), excluded=excluded)
+        picked.append(res[1])
+        zip_for(out, "EP_95", res[1])
+    assert picked == keep[:-1] + ["take_ two"]      # a comma in a video name becomes _ in its zip name
+    res, B = run(batch, monkeypatch, str(root), output_folder=str(out), excluded=excluded)
+    assert all(isinstance(o, B) for o in res)
+    # the other way round: the comma path is the one left out
+    res, B = run(batch, monkeypatch, str(root), output_folder=str(out), excluded=str(root / "take, two.mp4"))
+    assert res[1] == "shot001"
