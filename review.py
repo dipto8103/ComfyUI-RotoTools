@@ -4,8 +4,8 @@
 #   https://github.com/KasunMalinda/ComfyUI-KM-VideoReview
 #   MIT License, Copyright (c) 2026 Kasun Malinda (full text in LICENSE-KM-VideoReview)
 # Everything of the original node is kept; RotoTools adds on top:
-#   * an RGBA B input (the roto) is kept with its alpha (WebP), so the player can show it over any
-#     background colour or as the alpha matte
+#   * an RGBA B input (the roto) is kept with its alpha (colour frame + a small PNG matte; no WebP, whose encoder
+#     crashed ComfyUI on long batches), so the player can show it over any background colour or as the alpha matte
 #   * a history of every shot reviewed in this ComfyUI session (lightest preview by default; the oldest are only
 #     dropped when the drive runs low)
 #   * the alpha matte (white on black) downloaded on request at full resolution - nothing is saved to the output
@@ -88,7 +88,7 @@ class RotoReview:
                                        "tooltip": "Base playback rate of the review player (the live rate can be changed in the player)."}),
                 "preview_format": (list(cls.PREVIEW_FORMATS.keys()),
                                    {"default": cls.DEFAULT_PREVIEW_FORMAT,
-                                    "tooltip": "How preview frames are encoded for the browser. jpeg is fastest to load; webp lossless is pixel-exact but slowest. An RGBA B is always webp (jpeg has no alpha)."}),
+                                    "tooltip": "How preview frames are encoded for the browser. jpeg is fastest to load; webp lossless is pixel-exact but slowest. For long batches keep jpeg: the WebP encoder has crashed ComfyUI on some PCs."}),
                 "quality": ("INT", {"default": cls.DEFAULT_QUALITY, "min": 1, "max": 100,
                                     "tooltip": "Encode quality for jpeg / webp. Ignored for webp lossless."}),
                 "Playback resolution": (list(cls.PLAYBACK_RES.keys()),
@@ -100,17 +100,25 @@ class RotoReview:
             },
         }
 
-    def review(self, images_a, images_b=None, preview_format=None,
-               quality=DEFAULT_QUALITY, name=None, **kwargs):
+    # RotoTools: a preview must never stop a batch. Problems writing it (disk full, no memory ...) are reported
+    # and the run goes on without a preview.
+    def review(self, images_a, images_b=None, **kwargs):
+        try:
+            return self._review(images_a, images_b, **kwargs)
+        except (OSError, MemoryError) as e:
+            print("[RotoReview] no preview for this shot (the batch goes on): %s: %s" % (type(e).__name__, e))
+            return {"ui": {"a_frames": [], "b_frames": []}}
+
+    def _review(self, images_a, images_b=None, preview_format=None,
+                quality=DEFAULT_QUALITY, name=None, **kwargs):
         fps = float(kwargs.get("Base fps", 24.0))
         fmt = self.PREVIEW_FORMATS.get(preview_format, "jpeg")
         scale = self.PLAYBACK_RES.get(kwargs.get("Playback resolution", self.DEFAULT_PLAYBACK_RES), 1.0)
         # Fresh id per execution so re-runs never overwrite files the browser
         # may still be fetching from a previous run.
         run_id = "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=6))
-        # RotoTools: an RGBA B keeps its alpha (webp; jpeg cannot hold alpha).
+        # RotoTools: an RGBA B keeps its alpha as a separate small PNG matte next to its colour frame.
         b_alpha = images_b is not None and int(images_b.shape[-1]) == 4
-        b_fmt = ("webp_lossless" if fmt == "webp_lossless" else "webp") if b_alpha else fmt
         # Node execution progress bar (the green bar on the node, like VHS).
         total = int(images_a.shape[0]) + (int(images_b.shape[0]) if images_b is not None else 0)
         pbar = ProgressBar(total) if ProgressBar else None
@@ -120,10 +128,10 @@ class RotoReview:
         with ThreadPoolExecutor(max_workers=workers) as ex:
             a_frames = self._save_batch(images_a, f"vr_{run_id}_a", fmt,
                                         quality, scale, ex, workers, pbar)
-            b_frames = []
+            b_frames, b_masks = [], []
             if images_b is not None:
-                b_frames = self._save_batch(images_b, f"vr_{run_id}_b", b_fmt,
-                                            quality, scale, ex, workers, pbar)
+                b_frames = self._save_batch(images_b, f"vr_{run_id}_b", fmt,
+                                            quality, scale, ex, workers, pbar, b_masks if b_alpha else None)
             # RotoTools: the alpha at full resolution, lossless (grey PNG, small: mattes are mostly flat),
             # so the matte download is exact whatever the preview settings are
             m_frames = self._save_alpha(images_b, f"vr_{run_id}_m", ex) if b_alpha else []
@@ -150,6 +158,7 @@ class RotoReview:
             # ... and file-safe for the download name ("ep93_shot6")
             "file": [_clean_name(re.sub(r"\s*[\\/]+\s*", "_", str(name or "").strip())) or "shot_" + run_id],
             "b_alpha": [bool(b_alpha)],
+            "b_masks": b_masks,
             "m_frames": m_frames,
         }
         remember_run(ui)
@@ -174,7 +183,7 @@ class RotoReview:
             f.result()
         return results
 
-    def _save_batch(self, images, prefix, fmt, quality, scale, ex, workers, pbar=None):
+    def _save_batch(self, images, prefix, fmt, quality, scale, ex, workers, pbar=None, masks=None):
         output_dir = folder_paths.get_temp_directory()
         full_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
             prefix, output_dir, images.shape[2], images.shape[1]
@@ -190,12 +199,29 @@ class RotoReview:
         def encode_frame(arr, path):
             # Runs on a worker thread: uint8 conversion -> PIL -> save.
             img = Image.fromarray((np.clip(arr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8))
-            if fmt == "jpeg" and img.mode != "RGB":
-                img = img.convert("RGB")
+            size = img.size
             if scale != 1.0:
-                w, h = img.size
-                img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+                size = (max(1, round(size[0] * scale)), max(1, round(size[1] * scale)))
+            if masks is not None:
+                img = split_alpha(img, size, os.path.splitext(path)[0] + "m.png")
+            elif fmt == "jpeg" and img.mode != "RGB":
+                img = img.convert("RGB")
+            if img.size != size:
+                img = img.resize(size, Image.LANCZOS)
             img.save(path, **save_kwargs)
+
+        # RotoTools: RGBA -> colour frame (returned) + matte (white with the alpha, PNG)
+        def split_alpha(img, size, mask_path):
+            small = img.resize(size, Image.LANCZOS) if img.size != size else img
+            alpha = small.getchannel("A")
+            Image.merge("LA", (Image.new("L", size, 255), alpha)).save(mask_path, format="PNG")
+            if small is img:
+                return img.convert("RGB")
+            # edge colours exactly as in the scaled roto; where nothing is visible the plain frame, so the
+            # jpeg has no hard black border that would bleed into soft edges
+            plate = img.convert("RGB").resize(size, Image.LANCZOS)
+            plate.paste(small.convert("RGB"), (0, 0), alpha.point(lambda v: 255 if v else 0))
+            return plate
 
         n = int(images.shape[0])
         results = [None] * n
@@ -218,6 +244,8 @@ class RotoReview:
             file = f"{filename}_{counter + i:05}_.{ext}"
             path = os.path.join(full_folder, file)
             results[i] = {"filename": file, "subfolder": subfolder, "type": "temp"}
+            if masks is not None:
+                masks.append({"filename": os.path.splitext(file)[0] + "m.png", "subfolder": subfolder, "type": "temp"})
             pending.add(ex.submit(encode_frame, arr, path))
             if len(pending) >= max_outstanding:
                 done, pending = wait(pending, return_when=FIRST_COMPLETED)
@@ -257,7 +285,8 @@ def _free_gb():
 
 
 def _forget(run):
-    for f in run["ui"]["a_frames"] + run["ui"]["b_frames"] + run["ui"].get("m_frames", []):
+    ui = run["ui"]
+    for f in ui["a_frames"] + ui["b_frames"] + ui.get("b_masks", []) + ui.get("m_frames", []):
         try:
             os.remove(_frame_path(f))
         except OSError:

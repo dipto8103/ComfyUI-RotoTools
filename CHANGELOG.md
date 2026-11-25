@@ -3,6 +3,11 @@
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/):
 MAJOR = breaking change (renamed/removed node or input), MINOR = new node or backward-compatible feature, PATCH = bug fix.
 
+## [0.4.3] - 2026-11-25
+### Fixed
+- **Roto Review (A/B)**: ComfyUI could crash ("Windows fatal exception: access violation" in `WebPImagePlugin.py`) during long batches, because the transparent preview frames were always WebP, even with jpeg selected. They are now a colour frame in the selected format plus a small PNG matte: with the default jpeg no WebP is written at all. The player looks the same and all views work as before.
+- **Roto Review (A/B)**: a preview that cannot be written (disk full, out of memory) no longer stops the run; it is reported in the console and the batch goes on.
+
 ## [0.4.2] - 2026-11-24
 ### Added
 - **Load Video Batch (Folders)**: **⇄ Inverse selection** on every folder's line. To run only a few shots of a big folder (10 of 500), leave those few out (✕) and press it: they become the batch and all the others of that folder are left out. Press it again to swap back. Other folders are not touched. **⇄ Inverse all folders** (on the bar) does every folder at once. Single videos are never inversed. A folder's line shows how many of its videos are in and left out.
