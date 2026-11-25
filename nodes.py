@@ -97,7 +97,10 @@ class SaveImageSequenceTGA:
             },
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("saved_path",)
+    OUTPUT_TOOLTIPS = ("The zip that was written (or the folder, with save_as_zip off). Connect it to Roto Review's "
+                       "after_save so the preview is made after the zip is safely on disk.",)
     FUNCTION = "save"
     OUTPUT_NODE = True
     CATEGORY = "image/save"
@@ -190,7 +193,8 @@ class SaveImageSequenceTGA:
                 len(results), zip_path, os.path.getsize(zip_path) / 1048576.0))
         else:
             print("[SaveImageSequenceTGA] wrote %d frames to %s" % (len(results), folder))
-        return {"ui": {"images": self._previews(images, preview_frames, start_number)}}
+        return {"ui": {"images": self._previews(images, preview_frames, start_number)},
+                "result": (zip_path if zf is not None else folder,)}
 
     @staticmethod
     def _previews(images, preview_frames, start_number):

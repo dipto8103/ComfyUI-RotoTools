@@ -104,6 +104,13 @@ app.registerExtension({
       });
     });
 
+    // RotoTools: formats of older workflows (WebP is gone) -> today's names, like review.py's LEGACY_FORMATS
+    chain(nodeType.prototype, "onConfigure", function () {
+      const w = this.widgets?.find((x) => x.name === "preview_format");
+      const now = { "webp (mid quality)": "jpeg (low quality)", "webp lossless (best quality)": "png (best quality)" };
+      if (w && now[w.value]) w.value = now[w.value];
+    });
+
     chain(nodeType.prototype, "onExecuted", function (message) {
       if (!message?.a_frames) return;
       this.vrPlayer?.load(message);

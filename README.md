@@ -14,6 +14,7 @@ Saves an `IMAGE` batch as numbered **TGA** frames, keeping a real **alpha channe
 - Zip is written to `*.zip.part` and renamed when complete, so a crash never leaves a half-written zip that looks finished.
 - Lossless RLE compression option, start number, zero padding, and a transparent preview of a few frames on the node.
 - Optional `zip_name` input: an exact zip name from another node (wins over `source_video`).
+- Output `saved_path`: the zip that was written (connect it to Roto Review's `after_save`).
 - Turn `save_as_zip` off to get loose `.tga` files.
 
 ### Spec Readout (size / frames / fps)  — `image/monitor`
@@ -67,7 +68,8 @@ A **preview-only** review player for checking roto work, based on [ComfyUI-KM-Vi
 
 - Everything of the original player: wipe (drag the line), side by side, difference, A/B flip, frame stepping and scrubbing, loop / bounce, fullscreen, exposure / gamma.
 - **B** shows the roto over a **background** of your choice (red, green, blue, black, white, grey, checkerboard), as the **alpha matte**, or as is.
-- **Light preview by default** (¼ resolution, low jpeg/webp quality): it is only for looking; the **TGA zip is the full-quality master**. Raise `Playback resolution` / `quality` on the node if you want a sharper preview.
+- **Light preview by default** (¼ resolution, low jpeg quality): it is only for looking; the **TGA zip is the full-quality master**. Raise `Playback resolution` / `quality` on the node if you want a sharper preview. `preview_format` png is pixel-exact but much bigger: keep jpeg for long batches.
+- **Safe in long batches**: connect the TGA saver's `saved_path` to `after_save` and the preview is made after the zip is on disk, so a problem with the preview can never cost a finished shot. A preview that cannot be written is reported in the console and the batch goes on.
 - **Layout**: the video fits exactly at the node's width (no black bars); the rest of the node's height is the history. The node keeps the size you give it (never smaller than its controls). The shot name sits under the controls, so a long name cannot hide them.
 - **History**: every shot reviewed in this ComfyUI session as a grid of thumbnails with a count (scrolls when full); click one to review it again. Only if the drive gets low (under 10 GB free) are the oldest dropped. ComfyUI empties the temp folder on restart, so the strip starts fresh then.
 - **⤓ Alpha matte**: downloads the shot's matte (white = subject on black, mp4) at **full resolution**, made from lossless full-size alpha frames, whatever the preview settings. Saved by your browser; nothing goes to ComfyUI's output folder. The background colour is only for viewing in the player.

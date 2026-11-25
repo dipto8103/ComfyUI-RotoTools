@@ -610,7 +610,7 @@ export class VideoReviewPlayer {
   // RotoTools: the roto frame as chosen in the B row (over a background, or its matte). Cached per frame;
   // a new canvas per view/background so the colour engine never reuses a stale texture.
   #bView(entry, img) {
-    if (!this.s.bAlpha || this.s.bView === "rgba") return img;
+    if (!this.s.bAlpha || (this.s.bView === "rgba" && !entry.mask)) return img;
     const key = `${this.s.bView}|${this.s.bg}`;
     if (entry.rr?.key === key) return entry.rr.canvas;
     const w = img.naturalWidth, h = img.naturalHeight;
@@ -618,7 +618,20 @@ export class VideoReviewPlayer {
     c.width = w;
     c.height = h;
     const g = c.getContext("2d");
-    if (this.s.bView === "alpha") {
+    // colour frame + separate matte image: cut it out first, then it is drawn like an RGBA frame
+    if (entry.mask?.naturalWidth) {
+      const cut = document.createElement("canvas");
+      cut.width = w;
+      cut.height = h;
+      const cg = cut.getContext("2d");
+      cg.drawImage(img, 0, 0);
+      cg.globalCompositeOperation = "destination-in";
+      cg.drawImage(entry.mask, 0, 0, w, h);
+      img = cut;
+    }
+    if (this.s.bView === "rgba") {
+      g.drawImage(img, 0, 0);
+    } else if (this.s.bView === "alpha") {
       g.fillStyle = "#000";
       g.fillRect(0, 0, w, h);
       const t = document.createElement("canvas");
@@ -803,6 +816,8 @@ export class VideoReviewPlayer {
     this.s.b = bList.map(toEntry);
     // RotoTools: mark B frames, remember which run and shot this is
     for (const e of this.s.b) e.isB = true;
+    const masks = payload.b_masks ?? []; // the roto's alpha, one small PNG per frame
+    this.s.b.forEach((e, i) => { if (masks[i]) e.maskUrl = toEntry(masks[i]).url; });
     this.s.bAlpha = !!payload.b_alpha?.[0];
     this.s.runId = payload.run_id?.[0] ?? null;
     this.s.name = payload.name?.[0] ?? "";
@@ -883,6 +898,7 @@ export class VideoReviewPlayer {
     for (const list of [this.s.a, this.s.b]) {
       for (const e of list) {
         if (e.status === "pending" && e.img) e.img.src = "";
+        if (e.status === "pending" && e.mask) e.mask.src = "";
       }
     }
     this.queue = [];
@@ -913,8 +929,26 @@ export class VideoReviewPlayer {
         if (aIdx === shownA || bIdx === shownB) this.#draw();
         this.#pumpQueue();
       };
-      img.onload = () => done(true);
-      img.onerror = () => done(false);
+      if (entry.maskUrl) {
+        // RotoTools: the frame is ready when its colour and its matte are both loaded
+        const mask = new Image();
+        mask.decoding = "async";
+        entry.mask = mask;
+        let left = 2;
+        const part = (ok) => {
+          if (left <= 0) return;
+          left = ok ? left - 1 : 0;
+          if (left === 0) done(ok);
+        };
+        for (const m of [img, mask]) {
+          m.onload = () => part(true);
+          m.onerror = () => part(false);
+        }
+        mask.src = entry.maskUrl;
+      } else {
+        img.onload = () => done(true);
+        img.onerror = () => done(false);
+      }
       img.src = entry.url;
     }
   }
