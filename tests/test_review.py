@@ -55,7 +55,7 @@ def test_lightest_preview_by_default_but_full_resolution_alpha(review):
     assert len(ui["m_frames"]) == 2
 
 
-def test_default_preview_never_uses_the_webp_encoder(review, monkeypatch):
+def test_no_preview_ever_uses_the_webp_encoder(review, monkeypatch):
     # its native encoder crashed ComfyUI (access violation) on long batches
     real = Image.Image.save
     used = []
@@ -65,6 +65,28 @@ def test_default_preview_never_uses_the_webp_encoder(review, monkeypatch):
     review.RotoReview().review(frames(4, 64, 96), frames(4, 64, 96, c=4), preview_format="jpeg (low quality)",
                                **{"Playback resolution": "1:1"})
     assert set(used) == {"JPEG", "PNG"} and len(used) == 2 * 4 * 4
+    # the choices of today, the ones of older workflows and nonsense
+    for fmt in list(review.RotoReview.INPUT_TYPES()["optional"]["preview_format"][0]) + [
+            "webp (mid quality)", "webp lossless (best quality)", "whatever", None]:
+        review.RotoReview().review(frames(2), frames(2, c=4), preview_format=fmt)
+        review.RotoReview().review(frames(2), frames(2), preview_format=fmt)
+    assert set(used) == {"JPEG", "PNG"}
+
+
+def test_formats_of_older_workflows_still_run(review):
+    R = review.RotoReview
+    assert list(R.INPUT_TYPES()["optional"]["preview_format"][0]) == ["jpeg (low quality)", "png (best quality)"]
+    ext = lambda f: R().review(frames(1), frames(1, c=4), preview_format=f)["ui"]["b_frames"][0]["filename"][-4:]
+    assert ext("webp (mid quality)") == ".jpg" and ext("webp lossless (best quality)") == ".png"
+    import inspect       # ComfyUI skips the list check of inputs that VALIDATE_INPUTS takes
+    assert "preview_format" in inspect.signature(R.VALIDATE_INPUTS).parameters
+    assert R.VALIDATE_INPUTS("webp (mid quality)") is True
+
+
+def test_after_save_is_only_a_wire(review):
+    assert review.RotoReview.INPUT_TYPES()["optional"]["after_save"][0] == "STRING"
+    ui = review.RotoReview().review(frames(1), frames(1, c=4), after_save="X:/out/shot1.zip", name="s")["ui"]
+    assert ui["name"] == ["s"] and len(ui["a_frames"]) == 1
 
 
 def test_scaled_roto_keeps_its_edge_colours(review):
@@ -72,7 +94,7 @@ def test_scaled_roto_keeps_its_edge_colours(review):
     arr = np.zeros((1, 64, 96, 4), dtype=np.float32)
     arr[..., 2] = 1.0
     arr[:, 16:48, 22:70] = (1.0, 0.0, 0.0, 1.0)
-    ui = review.RotoReview().review(FakeTensor(arr[..., :3]), FakeTensor(arr), preview_format="webp lossless (best quality)")["ui"]
+    ui = review.RotoReview().review(FakeTensor(arr[..., :3]), FakeTensor(arr), preview_format="png (best quality)")["ui"]
     rgb = np.asarray(Image.open(review._frame_path(ui["b_frames"][0])).convert("RGB")).astype(int)
     a = np.asarray(Image.open(review._frame_path(ui["b_masks"][0])))[..., 1].astype(int)
     solid = a > 40
@@ -80,9 +102,10 @@ def test_scaled_roto_keeps_its_edge_colours(review):
     assert (rgb[a == 0][:, 2] > 200).mean() > 0.9        # hidden part: the plate, not black
 
 
-def test_preview_problems_do_not_stop_the_batch(review, monkeypatch, capsys):
+@pytest.mark.parametrize("err", [OSError(28, "No space left on device"), MemoryError(), RuntimeError("can't start new thread")])
+def test_preview_problems_do_not_stop_the_batch(review, monkeypatch, capsys, err):
     def full(*a, **k):
-        raise OSError(28, "No space left on device")
+        raise err
     monkeypatch.setattr(Image.Image, "save", full)
     out = review.RotoReview().review(frames(2), frames(2, c=4), name="s1")
     assert out["ui"]["a_frames"] == [] and review.history() == []
@@ -90,8 +113,9 @@ def test_preview_problems_do_not_stop_the_batch(review, monkeypatch, capsys):
 
 
 def test_plain_b_and_single_stream_unchanged(review):
-    ui = review.RotoReview().review(frames(), frames(), preview_format="webp (mid quality)")["ui"]
-    assert ui["b_alpha"] == [False] and ui["b_frames"][0]["filename"].endswith(".webp") and ui["m_frames"] == []
+    ui = review.RotoReview().review(frames(), frames(), preview_format="png (best quality)")["ui"]
+    assert ui["b_alpha"] == [False] and ui["b_frames"][0]["filename"].endswith(".png") and ui["m_frames"] == []
+    assert ui["b_masks"] == []
     ui = review.RotoReview().review(frames())["ui"]
     assert ui["b_frames"] == [] and ui["b_size"] == [] and ui["m_frames"] == []
 

@@ -55,12 +55,18 @@ class RotoReview:
 
     # Dropdown label -> internal encoder key. Labels carry the quality tier so
     # the fidelity/speed trade-off is obvious in the UI.
+    # RotoTools: no WebP (its encoder crashed ComfyUI on long batches). Values saved in older workflows still work:
+    # see LEGACY_FORMATS.
     PREVIEW_FORMATS = {
         "jpeg (low quality)": "jpeg",
-        "webp (mid quality)": "webp",
-        "webp lossless (best quality)": "webp_lossless",
+        "png (best quality)": "png",
+    }
+    LEGACY_FORMATS = {
+        "webp (mid quality)": "jpeg",
+        "webp lossless (best quality)": "png",
     }
     DEFAULT_PREVIEW_FORMAT = "jpeg (low quality)"
+    MAX_WORKERS = 4   # RotoTools: the preview must not load the whole CPU during a batch
 
     # Playback resolution = scale factor applied to the source when generating
     # preview frames. < 1 downscales (faster/lighter).
@@ -88,31 +94,42 @@ class RotoReview:
                                        "tooltip": "Base playback rate of the review player (the live rate can be changed in the player)."}),
                 "preview_format": (list(cls.PREVIEW_FORMATS.keys()),
                                    {"default": cls.DEFAULT_PREVIEW_FORMAT,
-                                    "tooltip": "How preview frames are encoded for the browser. jpeg is fastest to load; webp lossless is pixel-exact but slowest. For long batches keep jpeg: the WebP encoder has crashed ComfyUI on some PCs."}),
+                                    "tooltip": "How preview frames are encoded for the browser. jpeg is light and fast to load; png is pixel-exact but about 5x bigger (keep jpeg for long batches)."}),
                 "quality": ("INT", {"default": cls.DEFAULT_QUALITY, "min": 1, "max": 100,
-                                    "tooltip": "Encode quality for jpeg / webp. Ignored for webp lossless."}),
+                                    "tooltip": "Encode quality for jpeg. Ignored for png (always lossless)."}),
                 "Playback resolution": (list(cls.PLAYBACK_RES.keys()),
                                         {"default": cls.DEFAULT_PLAYBACK_RES,
                                          "tooltip": "Scale the preview frames relative to the source. Lower = faster load and less memory."}),
                 "name": ("STRING", {"forceInput": True,
                                     "tooltip": "Shot name for the history and the download (connect shot_label from "
                                                "Load Video Batch: 'ep93 / shot6', unique even for same-named shots)."}),
+                # RotoTools: never read; the wire only makes this node wait until the zip is on disk
+                "after_save": ("STRING", {"forceInput": True,
+                                          "tooltip": "Connect saved_path of Save Image Sequence (TGA): the preview is "
+                                                     "then made AFTER the zip is saved, so a problem with the preview "
+                                                     "can never cost a finished shot."}),
             },
         }
 
-    # RotoTools: a preview must never stop a batch. Problems writing it (disk full, no memory ...) are reported
-    # and the run goes on without a preview.
+    @classmethod
+    def VALIDATE_INPUTS(cls, preview_format=None):
+        # taking preview_format here makes ComfyUI accept values of older workflows that left the list
+        # (LEGACY_FORMATS); anything unknown falls back to jpeg
+        return True
+
+    # RotoTools: a preview must never stop a batch. Problems making it (disk full, no memory, no new thread ...) are
+    # reported and the run goes on without a preview.
     def review(self, images_a, images_b=None, **kwargs):
         try:
             return self._review(images_a, images_b, **kwargs)
-        except (OSError, MemoryError) as e:
+        except (OSError, MemoryError, RuntimeError) as e:
             print("[RotoReview] no preview for this shot (the batch goes on): %s: %s" % (type(e).__name__, e))
             return {"ui": {"a_frames": [], "b_frames": []}}
 
     def _review(self, images_a, images_b=None, preview_format=None,
-                quality=DEFAULT_QUALITY, name=None, **kwargs):
+                quality=DEFAULT_QUALITY, name=None, after_save=None, **kwargs):
         fps = float(kwargs.get("Base fps", 24.0))
-        fmt = self.PREVIEW_FORMATS.get(preview_format, "jpeg")
+        fmt = {**self.LEGACY_FORMATS, **self.PREVIEW_FORMATS}.get(preview_format, "jpeg")
         scale = self.PLAYBACK_RES.get(kwargs.get("Playback resolution", self.DEFAULT_PLAYBACK_RES), 1.0)
         # Fresh id per execution so re-runs never overwrite files the browser
         # may still be fetching from a previous run.
@@ -124,7 +141,7 @@ class RotoReview:
         pbar = ProgressBar(total) if ProgressBar else None
         # Color transform + encode are CPU-bound numpy/C code that releases the
         # GIL, so a thread pool gives a near-linear speedup.
-        workers = min(12, (os.cpu_count() or 4))
+        workers = min(self.MAX_WORKERS, (os.cpu_count() or 4))
         with ThreadPoolExecutor(max_workers=workers) as ex:
             a_frames = self._save_batch(images_a, f"vr_{run_id}_a", fmt,
                                         quality, scale, ex, workers, pbar)
@@ -188,11 +205,9 @@ class RotoReview:
         full_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
             prefix, output_dir, images.shape[2], images.shape[1]
         )
-        ext = "webp" if fmt.startswith("webp") else "jpg"
-        if fmt == "webp_lossless":
-            save_kwargs = dict(format="WEBP", lossless=True, method=2)
-        elif fmt == "webp":
-            save_kwargs = dict(format="WEBP", quality=quality)
+        ext = "png" if fmt == "png" else "jpg"
+        if fmt == "png":
+            save_kwargs = dict(format="PNG", compress_level=1)
         else:
             save_kwargs = dict(format="JPEG", quality=quality)
 

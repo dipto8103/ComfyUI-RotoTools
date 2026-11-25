@@ -5,8 +5,14 @@ MAJOR = breaking change (renamed/removed node or input), MINOR = new node or bac
 
 ## [0.4.3] - 2026-11-25
 ### Fixed
-- **Roto Review (A/B)**: ComfyUI could crash ("Windows fatal exception: access violation" in `WebPImagePlugin.py`) during long batches, because the transparent preview frames were always WebP, even with jpeg selected. They are now a colour frame in the selected format plus a small PNG matte: with the default jpeg no WebP is written at all. The player looks the same and all views work as before.
+- **Roto Review (A/B)**: ComfyUI could crash ("Windows fatal exception: access violation" in `WebPImagePlugin.py`) during long batches, because the transparent preview frames were always WebP, even with jpeg selected. WebP is gone: a roto frame is now a colour frame in the selected format plus a small PNG matte. The player looks the same and all views work as before.
 - **Roto Review (A/B)**: a preview that cannot be written (disk full, out of memory) no longer stops the run; it is reported in the console and the batch goes on.
+### Added
+- **Save Image Sequence (TGA, RGBA)**: new output `saved_path` (the zip that was written).
+- **Roto Review (A/B)**: new optional input `after_save`. Connect the saver's `saved_path` to it and the preview is made after the zip is on disk, so a problem with the preview can never cost a finished shot.
+### Changed
+- **Roto Review (A/B)**: `preview_format` is now `jpeg (low quality)` (default) or `png (best quality)`. Older workflows keep working: `webp (mid quality)` becomes jpeg, `webp lossless (best quality)` becomes png.
+- **Roto Review (A/B)**: previews are written by 4 workers instead of 12, for less CPU load during a batch.
 
 ## [0.4.2] - 2026-11-24
 ### Added

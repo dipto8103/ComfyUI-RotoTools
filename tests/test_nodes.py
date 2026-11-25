@@ -86,6 +86,16 @@ def test_loose_files_mode_does_not_overwrite(nodes_mod, make_frames, tmp_path):
     assert os.path.isdir(tmp_path / "out_v2")
 
 
+def test_saved_path_is_what_was_really_written(nodes_mod, make_frames, tmp_path):
+    cls = nodes_mod.SaveImageSequenceTGA
+    assert cls.RETURN_TYPES == ("STRING",) and cls.RETURN_NAMES == ("saved_path",)
+    paths = [run_save(nodes_mod, make_frames(1), tmp_path, zip_name="shot5")["result"][0] for _ in range(2)]
+    assert paths == [str(tmp_path / "shot5.zip"), str(tmp_path / "shot5_v2.zip")]
+    assert all(os.path.isfile(p) for p in paths)
+    loose = run_save(nodes_mod, make_frames(1), tmp_path / "loose", save_as_zip=False)["result"][0]
+    assert loose == str(tmp_path / "loose") and os.path.isdir(loose)
+
+
 def test_start_number_and_digits(nodes_mod, make_frames, tmp_path):
     run_save(nodes_mod, make_frames(2), tmp_path, start_number=10, digits=3)
     with zipfile.ZipFile(tmp_path / "frame.zip") as zf:
